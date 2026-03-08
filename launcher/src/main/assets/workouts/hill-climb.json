@@ -1,0 +1,21 @@
+{
+  "id": "hill-climb",
+  "name": "Hill Climb",
+  "description": "25 min of increasing resistance. Climb the mountain!",
+  "durationMinutes": 25,
+  "type": "Climb",
+  "category": "Endurance",
+  "coach": "Virtual Coach",
+  "optionalMedia": true,
+  "color": "#059669",
+  "segments": [
+    {"label": "Warm Up", "durationSeconds": 180, "resistance": 5, "message": "Light spin to warm up"},
+    {"label": "Base", "durationSeconds": 240, "resistance": 10, "message": "Set your base pace — resistance 10"},
+    {"label": "Climb 1", "durationSeconds": 240, "resistance": 15, "message": "First hill — increase to 15"},
+    {"label": "Recovery", "durationSeconds": 120, "resistance": 8, "message": "Brief valley — catch your breath"},
+    {"label": "Climb 2", "durationSeconds": 240, "resistance": 20, "message": "Steeper now — push to 20"},
+    {"label": "Recovery", "durationSeconds": 120, "resistance": 8, "message": "Last rest before the summit"},
+    {"label": "Summit Push", "durationSeconds": 240, "resistance": 25, "message": "SUMMIT! Maximum effort — resistance 25!"},
+    {"label": "Cool Down", "durationSeconds": 120, "resistance": 5, "message": "Descent — you conquered the mountain!"}
+  ]
+}

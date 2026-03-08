@@ -1,0 +1,28 @@
+{
+  "id": "power-pyramid",
+  "name": "Power Pyramid",
+  "description": "30 min pyramid intervals. Build up then back down.",
+  "durationMinutes": 30,
+  "type": "Power",
+  "category": "Strength",
+  "coach": "Adaptive Workout",
+  "optionalMedia": true,
+  "color": "#0284C7",
+  "segments": [
+    {"label": "Warm Up", "durationSeconds": 180, "resistance": 5, "message": "Easy warm up spin"},
+    {"label": "Level 1", "durationSeconds": 120, "resistance": 10, "message": "Building up — resistance 10"},
+    {"label": "Level 2", "durationSeconds": 120, "resistance": 15, "message": "Climbing higher — push to 15"},
+    {"label": "Level 3", "durationSeconds": 120, "resistance": 20, "message": "Getting steep — resistance 20"},
+    {"label": "Peak", "durationSeconds": 180, "resistance": 25, "message": "PEAK! Hold at max resistance 25!"},
+    {"label": "Level 3", "durationSeconds": 120, "resistance": 20, "message": "Coming down — ease to 20"},
+    {"label": "Level 2", "durationSeconds": 120, "resistance": 15, "message": "Descending — resistance 15"},
+    {"label": "Level 1", "durationSeconds": 120, "resistance": 10, "message": "Back to base — resistance 10"},
+    {"label": "Recovery", "durationSeconds": 60, "resistance": 5, "message": "Quick breather before round 2"},
+    {"label": "Level 1", "durationSeconds": 120, "resistance": 10, "message": "Round 2! Building again"},
+    {"label": "Level 2", "durationSeconds": 120, "resistance": 15, "message": "Push through — 15"},
+    {"label": "Level 3", "durationSeconds": 120, "resistance": 20, "message": "Almost at the top again!"},
+    {"label": "Peak", "durationSeconds": 180, "resistance": 25, "message": "FINAL PEAK! Everything you've got!"},
+    {"label": "Descend", "durationSeconds": 120, "resistance": 15, "message": "Coming down — well done!"},
+    {"label": "Cool Down", "durationSeconds": 180, "resistance": 3, "message": "Cool down — incredible effort!"}
+  ]
+}

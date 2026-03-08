@@ -1,0 +1,20 @@
+{
+  "id": "endurance-builder",
+  "name": "Endurance Builder",
+  "description": "45 min sustained effort with gradual progression. Build your base.",
+  "durationMinutes": 45,
+  "type": "Endurance",
+  "category": "Endurance",
+  "coach": "Virtual Coach",
+  "optionalMedia": true,
+  "color": "#0891B2",
+  "segments": [
+    {"label": "Warm Up", "durationSeconds": 300, "resistance": 5, "message": "5 min easy warm up"},
+    {"label": "Zone 2 Base", "durationSeconds": 600, "resistance": 10, "message": "Settle into zone 2 — steady effort"},
+    {"label": "Build", "durationSeconds": 300, "resistance": 13, "message": "Slight increase — stay smooth"},
+    {"label": "Sustain", "durationSeconds": 600, "resistance": 15, "message": "Hold this pace — you've got this"},
+    {"label": "Push", "durationSeconds": 300, "resistance": 18, "message": "Pushing up — controlled power"},
+    {"label": "Sustain", "durationSeconds": 300, "resistance": 15, "message": "Back to sustain — find your rhythm"},
+    {"label": "Cool Down", "durationSeconds": 300, "resistance": 5, "message": "Easy spin — great endurance work!"}
+  ]
+}

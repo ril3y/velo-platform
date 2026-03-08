@@ -1,0 +1,16 @@
+{
+  "id": "fat-burn",
+  "name": "Fat Burn",
+  "description": "20 min moderate steady-state for fat burning.",
+  "durationMinutes": 20,
+  "type": "Steady",
+  "category": "Endurance",
+  "coach": "Virtual Coach",
+  "optionalMedia": false,
+  "color": "#F97316",
+  "segments": [
+    {"label": "Warm Up", "durationSeconds": 180, "resistance": 3, "message": "Gentle start — keep it light"},
+    {"label": "Fat Burn Zone", "durationSeconds": 900, "resistance": 12, "message": "Steady pace — stay in the fat burn zone at resistance 12"},
+    {"label": "Recovery", "durationSeconds": 120, "resistance": 8, "message": "Winding down — great steady effort!"}
+  ]
+}

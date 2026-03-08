@@ -1,0 +1,20 @@
+{
+  "id": "five-min-blast",
+  "name": "5 Min Blast",
+  "description": "Quick 5 min burst when you're short on time. No excuses!",
+  "durationMinutes": 5,
+  "type": "HIIT",
+  "category": "Quick",
+  "coach": "Adaptive Workout",
+  "optionalMedia": false,
+  "color": "#F59E0B",
+  "segments": [
+    {"label": "Quick Warm", "durationSeconds": 30, "resistance": 5, "message": "30 seconds — let's go!"},
+    {"label": "Push 1", "durationSeconds": 45, "resistance": 20, "message": "First push — resistance 20"},
+    {"label": "Recover", "durationSeconds": 30, "resistance": 5, "message": "Quick breather"},
+    {"label": "Push 2", "durationSeconds": 45, "resistance": 23, "message": "Harder! Resistance 23"},
+    {"label": "Recover", "durationSeconds": 30, "resistance": 5, "message": "Catch your breath"},
+    {"label": "All Out", "durationSeconds": 60, "resistance": 28, "message": "FINAL MINUTE! MAX EFFORT!"},
+    {"label": "Cool Down", "durationSeconds": 60, "resistance": 3, "message": "Done! Great quick session"}
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "id": "rolling-hills",
+  "name": "Rolling Hills",
+  "description": "35 min of rolling terrain. Ups and downs keep it interesting.",
+  "durationMinutes": 35,
+  "type": "Endurance",
+  "category": "Endurance",
+  "coach": "Virtual Coach",
+  "optionalMedia": true,
+  "color": "#14B8A6",
+  "segments": [
+    {"label": "Warm Up", "durationSeconds": 180, "resistance": 5, "message": "Easy warm up"},
+    {"label": "Hill 1", "durationSeconds": 180, "resistance": 15, "message": "First gentle hill — 15"},
+    {"label": "Valley", "durationSeconds": 120, "resistance": 8, "message": "Coast downhill"},
+    {"label": "Hill 2", "durationSeconds": 180, "resistance": 18, "message": "Steeper this time — 18"},
+    {"label": "Valley", "durationSeconds": 120, "resistance": 8, "message": "Enjoy the descent"},
+    {"label": "Hill 3", "durationSeconds": 180, "resistance": 20, "message": "Getting serious — 20"},
+    {"label": "Valley", "durationSeconds": 120, "resistance": 8, "message": "Rest those legs"},
+    {"label": "Hill 4", "durationSeconds": 180, "resistance": 22, "message": "Biggest hill — push to 22!"},
+    {"label": "Valley", "durationSeconds": 120, "resistance": 8, "message": "Last descent"},
+    {"label": "Hill 5", "durationSeconds": 120, "resistance": 15, "message": "Final gentle rise"},
+    {"label": "Cool Down", "durationSeconds": 180, "resistance": 3, "message": "Flat road home — great ride!"}
+  ]
+}

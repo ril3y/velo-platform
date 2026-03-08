@@ -1,0 +1,27 @@
+{
+  "id": "intervals",
+  "name": "Intervals",
+  "description": "20 min high/low alternating for max calorie burn.",
+  "durationMinutes": 20,
+  "type": "HIIT",
+  "category": "HIIT",
+  "coach": "Adaptive Workout",
+  "optionalMedia": true,
+  "color": "#7C3AED",
+  "segments": [
+    {"label": "Warm Up", "durationSeconds": 180, "resistance": 5, "message": "Easy spin — get the legs moving"},
+    {"label": "Sprint 1", "durationSeconds": 60, "resistance": 25, "message": "GO! Max effort — push resistance to 25"},
+    {"label": "Recover", "durationSeconds": 90, "resistance": 5, "message": "Catch your breath — drop resistance"},
+    {"label": "Sprint 2", "durationSeconds": 60, "resistance": 25, "message": "Push it! Resistance up to 25"},
+    {"label": "Recover", "durationSeconds": 90, "resistance": 5, "message": "Easy spin — recover"},
+    {"label": "Sprint 3", "durationSeconds": 60, "resistance": 25, "message": "Halfway there — stay strong!"},
+    {"label": "Recover", "durationSeconds": 90, "resistance": 5, "message": "Breathe deep — next one coming"},
+    {"label": "Sprint 4", "durationSeconds": 60, "resistance": 25, "message": "Dig deep — resistance to 25"},
+    {"label": "Recover", "durationSeconds": 90, "resistance": 5, "message": "Almost done — recover well"},
+    {"label": "Sprint 5", "durationSeconds": 60, "resistance": 25, "message": "Second to last — give it everything!"},
+    {"label": "Recover", "durationSeconds": 90, "resistance": 5, "message": "Last recovery — prepare for final push"},
+    {"label": "Sprint 6", "durationSeconds": 60, "resistance": 25, "message": "FINAL SPRINT! Leave nothing behind!"},
+    {"label": "Recover", "durationSeconds": 90, "resistance": 5, "message": "Great job — ease down"},
+    {"label": "Cool Down", "durationSeconds": 120, "resistance": 3, "message": "Cool down — nice work!"}
+  ]
+}

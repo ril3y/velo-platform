@@ -1,0 +1,17 @@
+{
+  "id": "recovery-spin",
+  "name": "Recovery Spin",
+  "description": "20 min easy spin. Active recovery for rest days.",
+  "durationMinutes": 20,
+  "type": "Recovery",
+  "category": "Recovery",
+  "coach": "Virtual Coach",
+  "optionalMedia": true,
+  "color": "#8B5CF6",
+  "segments": [
+    {"label": "Easy Start", "durationSeconds": 300, "resistance": 3, "message": "Nice and easy — this is recovery"},
+    {"label": "Light Spin", "durationSeconds": 300, "resistance": 5, "message": "Gentle increase — keep it comfortable"},
+    {"label": "Moderate", "durationSeconds": 300, "resistance": 7, "message": "Slightly more — still conversational pace"},
+    {"label": "Easy", "durationSeconds": 300, "resistance": 4, "message": "Back to easy — enjoy the ride"}
+  ]
+}

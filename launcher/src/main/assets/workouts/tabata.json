@@ -1,0 +1,30 @@
+{
+  "id": "tabata",
+  "name": "Tabata Blast",
+  "description": "Classic 4 min Tabata protocol. 20s on, 10s off, repeated 8 times.",
+  "durationMinutes": 10,
+  "type": "HIIT",
+  "category": "Quick",
+  "coach": "Adaptive Workout",
+  "optionalMedia": true,
+  "color": "#EC4899",
+  "segments": [
+    {"label": "Warm Up", "durationSeconds": 180, "resistance": 5, "message": "Easy spin to get ready"},
+    {"label": "Tabata 1", "durationSeconds": 20, "resistance": 28, "message": "ALL OUT! 20 seconds!"},
+    {"label": "Rest", "durationSeconds": 10, "resistance": 3, "message": "10 second rest"},
+    {"label": "Tabata 2", "durationSeconds": 20, "resistance": 28, "message": "GO GO GO!"},
+    {"label": "Rest", "durationSeconds": 10, "resistance": 3, "message": "Breathe!"},
+    {"label": "Tabata 3", "durationSeconds": 20, "resistance": 28, "message": "Halfway! Push!"},
+    {"label": "Rest", "durationSeconds": 10, "resistance": 3, "message": "Quick rest"},
+    {"label": "Tabata 4", "durationSeconds": 20, "resistance": 28, "message": "Stay strong!"},
+    {"label": "Rest", "durationSeconds": 10, "resistance": 3, "message": "Almost there"},
+    {"label": "Tabata 5", "durationSeconds": 20, "resistance": 28, "message": "5 of 8! Dig deep!"},
+    {"label": "Rest", "durationSeconds": 10, "resistance": 3, "message": "Rest"},
+    {"label": "Tabata 6", "durationSeconds": 20, "resistance": 28, "message": "3 more rounds!"},
+    {"label": "Rest", "durationSeconds": 10, "resistance": 3, "message": "Hang in there"},
+    {"label": "Tabata 7", "durationSeconds": 20, "resistance": 28, "message": "Second to last!"},
+    {"label": "Rest", "durationSeconds": 10, "resistance": 3, "message": "One more!"},
+    {"label": "Tabata 8", "durationSeconds": 20, "resistance": 28, "message": "FINAL ROUND! EVERYTHING!"},
+    {"label": "Cool Down", "durationSeconds": 120, "resistance": 3, "message": "Amazing work — cool down"}
+  ]
+}

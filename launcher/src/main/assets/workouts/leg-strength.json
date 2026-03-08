@@ -1,0 +1,23 @@
+{
+  "id": "leg-strength",
+  "name": "Leg Strength",
+  "description": "25 min heavy resistance focus. Low cadence, high power.",
+  "durationMinutes": 25,
+  "type": "Strength",
+  "category": "Strength",
+  "coach": "Adaptive Workout",
+  "optionalMedia": false,
+  "color": "#DC2626",
+  "segments": [
+    {"label": "Warm Up", "durationSeconds": 180, "resistance": 5, "message": "Warm up the legs"},
+    {"label": "Heavy 1", "durationSeconds": 180, "resistance": 22, "message": "Slow cadence, heavy push — resistance 22"},
+    {"label": "Spin Out", "durationSeconds": 60, "resistance": 8, "message": "Fast spin — flush the legs"},
+    {"label": "Heavy 2", "durationSeconds": 180, "resistance": 25, "message": "Even heavier — grind it out at 25"},
+    {"label": "Spin Out", "durationSeconds": 60, "resistance": 8, "message": "Shake it out"},
+    {"label": "Heavy 3", "durationSeconds": 180, "resistance": 28, "message": "Max strength — resistance 28!"},
+    {"label": "Spin Out", "durationSeconds": 60, "resistance": 8, "message": "Recovery spin"},
+    {"label": "Heavy 4", "durationSeconds": 180, "resistance": 25, "message": "Last heavy set — stay powerful"},
+    {"label": "Spin Out", "durationSeconds": 60, "resistance": 8, "message": "Almost done"},
+    {"label": "Cool Down", "durationSeconds": 180, "resistance": 3, "message": "Cool down — legs of steel!"}
+  ]
+}
