@@ -64,12 +64,34 @@ func WriteCachedVersion(tag string) {
 	os.WriteFile(filepath.Join(dir, "cached_version.txt"), []byte(tag), 0644)
 }
 
+// GitHubToken is set at startup. If empty, unauthenticated requests are used
+// (works for public repos only).
+var GitHubToken string
+
+// LoadToken reads a GitHub token from %APPDATA%/freewheel/github_token.txt
+// or the FREEWHEEL_GITHUB_TOKEN environment variable.
+func LoadToken() string {
+	// Env var takes priority
+	if tok := os.Getenv("FREEWHEEL_GITHUB_TOKEN"); tok != "" {
+		return strings.TrimSpace(tok)
+	}
+	// Fall back to config file
+	data, err := os.ReadFile(filepath.Join(CacheDir(), "github_token.txt"))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
 // FetchLatestRelease queries GitHub for the latest release.
 func FetchLatestRelease() (*Release, error) {
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", owner, repo)
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 	req.Header.Set("User-Agent", "FreeWheel")
+	if GitHubToken != "" {
+		req.Header.Set("Authorization", "Bearer "+GitHubToken)
+	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -77,6 +99,15 @@ func FetchLatestRelease() (*Release, error) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == 404 {
+		if GitHubToken == "" {
+			return nil, fmt.Errorf("repo not found (private repo? set token in %%APPDATA%%/freewheel/github_token.txt)")
+		}
+		return nil, fmt.Errorf("release not found (check token permissions)")
+	}
+	if resp.StatusCode == 401 || resp.StatusCode == 403 {
+		return nil, fmt.Errorf("auth failed (%d) — check your GitHub token", resp.StatusCode)
+	}
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("GitHub API returned %d", resp.StatusCode)
 	}
@@ -116,7 +147,13 @@ type ProgressFunc func(downloaded, total int64)
 func DownloadFile(url, destPath string, progress ProgressFunc) error {
 	os.MkdirAll(filepath.Dir(destPath), 0755)
 
-	resp, err := http.Get(url)
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Set("User-Agent", "FreeWheel")
+	if GitHubToken != "" {
+		req.Header.Set("Authorization", "Bearer "+GitHubToken)
+		req.Header.Set("Accept", "application/octet-stream")
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
 	}

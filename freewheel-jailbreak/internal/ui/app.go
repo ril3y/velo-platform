@@ -271,18 +271,29 @@ func Run() {
 		time.Sleep(300 * time.Millisecond)
 		log.Info(fmt.Sprintf("FreeWheel v%s (%s) ready.", Version, GitHash))
 
+		// Load GitHub token for private repo access
+		update.GitHubToken = update.LoadToken()
+		if update.GitHubToken != "" {
+			log.Dim("GitHub token loaded.")
+		}
+
 		// Check GitHub Releases for latest version and APKs
 		log.Dim("Checking for updates...")
 		rel, err := update.FetchLatestRelease()
 		if err != nil {
 			log.Warn(fmt.Sprintf("Update check failed: %v", err))
-			log.Dim("Using cached APKs if available.")
 
 			if update.CachedVersion() == "" {
-				log.Error("No cached APKs found! Jailbreak requires an internet connection on first run.")
-				log.Warn("Please check your internet connection and restart FreeWheel.")
+				log.Error("No cached APKs — cannot jailbreak without them.")
+				if update.GitHubToken == "" {
+					log.Warn("If repo is private, create:")
+					log.Warn("  %APPDATA%/freewheel/github_token.txt")
+					log.Warn("  with a GitHub personal access token.")
+				} else {
+					log.Warn("Token is set but API failed. Check token permissions.")
+				}
 			} else {
-				log.Dim(fmt.Sprintf("Cached release: %s", update.CachedVersion()))
+				log.Dim(fmt.Sprintf("Using cached APKs (%s).", update.CachedVersion()))
 			}
 			return
 		}

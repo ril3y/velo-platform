@@ -62,9 +62,33 @@ func NewLogger() *Logger {
 
 func (l *Logger) Widget() *widget.List { return l.list }
 
+// maxLineLen is the approximate character limit before wrapping.
+const maxLineLen = 70
+
 func (l *Logger) append(clr color.Color, msg string) {
 	l.mu.Lock()
-	l.entries = append(l.entries, logEntry{text: msg, color: clr})
+	// Split long lines so they don't overflow the list panel
+	for len(msg) > maxLineLen {
+		// Try to break at a space
+		cut := maxLineLen
+		for cut > maxLineLen/2 {
+			if msg[cut] == ' ' {
+				break
+			}
+			cut--
+		}
+		if cut <= maxLineLen/2 {
+			cut = maxLineLen // no good space, hard break
+		}
+		l.entries = append(l.entries, logEntry{text: msg[:cut], color: clr})
+		msg = "  " + msg[cut:] // indent continuation
+		if len(msg) > 2 && msg[2] == ' ' {
+			msg = "  " + msg[3:] // trim leading space from break point
+		}
+	}
+	if len(msg) > 0 {
+		l.entries = append(l.entries, logEntry{text: msg, color: clr})
+	}
 	l.mu.Unlock()
 	fyne.Do(func() {
 		l.list.Refresh()
