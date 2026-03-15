@@ -272,7 +272,7 @@ fun SettingsScreen(
                     }
                     SettingsCategory.ABOUT -> {
                         PaneTitle("About")
-                        InfoRow("VeloLauncher", BuildConfig.VERSION_NAME)
+                        InfoRow("VeloLauncher", "${BuildConfig.VERSION_NAME} (${BuildConfig.GIT_HASH})")
                         InfoRow("Build", "#${BuildConfig.VERSION_CODE}")
                         InfoRow("Package", BuildConfig.APPLICATION_ID)
                         InfoRow("Android", "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")

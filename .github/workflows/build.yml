@@ -151,7 +151,10 @@ jobs:
         shell: bash
         run: |
           cd freewheel-jailbreak
-          go build -ldflags "-H windowsgui" -o freewheel.exe ./cmd/freewheel
+          VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
+          VERSION=${VERSION#v}
+          HASH=$(git rev-parse --short=8 HEAD)
+          go build -ldflags "-H windowsgui -X main.version=${VERSION} -X main.gitHash=${HASH}" -o freewheel.exe ./cmd/freewheel
           ls -lh freewheel.exe
 
       - name: Upload FreeWheel

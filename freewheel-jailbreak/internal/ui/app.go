@@ -19,6 +19,10 @@ import (
 	"github.com/ril3y/freewheel-jailbreak/internal/device"
 )
 
+// Version and GitHash are set by main via ldflags.
+var Version = "dev"
+var GitHash = "unknown"
+
 // Run creates and runs the FreeWheel application.
 func Run() {
 	// Wire up the FindAPK function for device operations
@@ -28,7 +32,7 @@ func Run() {
 
 	a := app.NewWithID("com.battlewithbytes.freewheel")
 	a.Settings().SetTheme(theme.DarkTheme())
-	w := a.NewWindow("FreeWheel")
+	w := a.NewWindow(fmt.Sprintf("FreeWheel v%s", Version))
 	w.Resize(fyne.NewSize(520, 600))
 	w.SetFixedSize(true)
 
@@ -262,7 +266,7 @@ func Run() {
 
 	go func() {
 		time.Sleep(300 * time.Millisecond)
-		log.Info("FreeWheel ready. Native ADB -- no external tools needed.")
+		log.Info(fmt.Sprintf("FreeWheel v%s (%s) ready. Native ADB -- no external tools needed.", Version, GitHash))
 	}()
 
 	w.ShowAndRun()

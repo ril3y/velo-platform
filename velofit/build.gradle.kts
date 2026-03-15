@@ -31,4 +31,13 @@ tasks.register<Jar>("buildClassesJar") {
     destinationDirectory.set(layout.buildDirectory.dir("libs"))
     from(layout.buildDirectory.dir("intermediates/javac/release/compileReleaseJavaWithJavac/classes"))
     exclude("**/R.class", "**/R\$*.class", "**/BuildConfig.class")
+    manifest {
+        val gitVersionName: String by rootProject.extra
+        val gitHash: String by rootProject.extra
+        attributes(
+            "Implementation-Title" to "velofit",
+            "Implementation-Version" to gitVersionName,
+            "Git-Hash" to gitHash,
+        )
+    }
 }
