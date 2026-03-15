@@ -120,6 +120,13 @@ jobs:
           go-version-file: freewheel-jailbreak/go.mod
           cache-dependency-path: freewheel-jailbreak/go.sum
 
+      - name: Generate Windows resources
+        shell: bash
+        run: |
+          go install github.com/tc-hib/go-winres@latest
+          cd freewheel-jailbreak/cmd/freewheel
+          go-winres make
+
       - name: Build FreeWheel
         shell: bash
         run: |

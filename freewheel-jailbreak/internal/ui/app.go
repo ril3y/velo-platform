@@ -198,7 +198,7 @@ func Run() {
 	logoRes := fyne.NewStaticResource("logo.png", assets.EmbeddedLogo)
 	logoImg := canvas.NewImageFromResource(logoRes)
 	logoImg.FillMode = canvas.ImageFillContain
-	logoImg.SetMinSize(fyne.NewSize(36, 36))
+	logoImg.SetMinSize(fyne.NewSize(72, 72))
 	w.SetIcon(logoRes)
 
 	// --- Header ---
