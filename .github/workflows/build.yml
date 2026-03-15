@@ -1,0 +1,162 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    name: Android APKs
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('**/*.gradle.kts', '**/gradle-wrapper.properties') }}
+          restore-keys: gradle-
+
+      - name: Create debug keystore
+        run: |
+          mkdir -p ~/.android
+          keytool -genkeypair -v \
+            -keystore ~/.android/debug.keystore \
+            -storepass android -keypass android \
+            -alias androiddebugkey \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US"
+
+      - name: Build all Android modules
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Platform-sign FreewheelBridge
+        if: github.event_name == 'push' || github.event_name == 'release'
+        env:
+          PLATFORM_PK8_B64: ${{ secrets.PLATFORM_PK8_B64 }}
+          PLATFORM_CERT_B64: ${{ secrets.PLATFORM_CERT_B64 }}
+        run: |
+          if [ -z "$PLATFORM_PK8_B64" ] || [ -z "$PLATFORM_CERT_B64" ]; then
+            echo "::warning::Platform signing keys not configured — skipping FreewheelBridge signing"
+            exit 0
+          fi
+
+          echo "$PLATFORM_PK8_B64" | base64 -d > /tmp/platform.pk8
+          echo "$PLATFORM_CERT_B64" | base64 -d > /tmp/device_platform.x509.pem
+
+          BUILD_TOOLS="${ANDROID_HOME}/build-tools/34.0.0"
+
+          APK_IN="freewheelbridge/build/outputs/apk/release/freewheelbridge-release-unsigned.apk"
+          APK_ALIGNED="freewheelbridge/build/outputs/apk/freewheelbridge-aligned.apk"
+          APK_OUT="freewheelbridge/build/outputs/apk/freewheelbridge.apk"
+
+          "${BUILD_TOOLS}/zipalign" -f 4 "$APK_IN" "$APK_ALIGNED"
+          "${BUILD_TOOLS}/apksigner" sign \
+            --key /tmp/platform.pk8 \
+            --cert /tmp/device_platform.x509.pem \
+            --out "$APK_OUT" \
+            "$APK_ALIGNED"
+          rm -f "$APK_ALIGNED"
+
+          "${BUILD_TOOLS}/apksigner" verify --print-certs "$APK_OUT"
+          echo "Signed: $APK_OUT ($(stat -c%s "$APK_OUT") bytes)"
+
+          rm -f /tmp/platform.pk8 /tmp/device_platform.x509.pem
+
+      - name: Build standalone JARs
+        run: ./gradlew :ucblib:buildClassesJar :velofit:buildClassesJar --no-daemon
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p artifacts
+          cp launcher/build/outputs/apk/release/launcher-release.apk artifacts/velolauncher.apk
+          cp freeride/build/outputs/apk/release/freeride-release.apk artifacts/freeride.apk
+
+          if [ -f freewheelbridge/build/outputs/apk/freewheelbridge.apk ]; then
+            cp freewheelbridge/build/outputs/apk/freewheelbridge.apk artifacts/serialbridge.apk
+          else
+            cp freewheelbridge/build/outputs/apk/release/freewheelbridge-release-unsigned.apk artifacts/serialbridge-unsigned.apk
+          fi
+
+          cp ucblib/build/libs/ucblib.jar artifacts/
+          cp velofit/build/libs/velofit.jar artifacts/
+
+      - name: Upload APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apks
+          path: artifacts/
+          retention-days: 30
+
+  jailbreak:
+    name: FreeWheel Jailbreak (Windows)
+    runs-on: windows-latest
+    needs: android
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: freewheel-jailbreak/go.mod
+          cache-dependency-path: freewheel-jailbreak/go.sum
+
+      - name: Download APKs
+        uses: actions/download-artifact@v4
+        with:
+          name: android-apks
+          path: apk-artifacts
+
+      - name: Embed APKs into assets
+        shell: bash
+        run: |
+          cd freewheel-jailbreak/assets
+
+          # Copy built APKs
+          [ -f ../../apk-artifacts/velolauncher.apk ] && cp ../../apk-artifacts/velolauncher.apk velolauncher.apk
+          [ -f ../../apk-artifacts/freeride.apk ] && cp ../../apk-artifacts/freeride.apk freeride.apk
+          if [ -f ../../apk-artifacts/serialbridge.apk ]; then
+            cp ../../apk-artifacts/serialbridge.apk serialbridge.apk
+          elif [ -f ../../apk-artifacts/serialbridge-unsigned.apk ]; then
+            cp ../../apk-artifacts/serialbridge-unsigned.apk serialbridge.apk
+          else
+            touch serialbridge.apk
+          fi
+
+          # Create placeholder APKs for external assets not built in CI
+          # These get replaced with real APKs in the full build.bat workflow
+          for apk in jailbreak.apk bikearcade.apk; do
+            [ -f "$apk" ] || touch "$apk"
+          done
+
+          ls -lh *.apk
+
+      - name: Build FreeWheel
+        shell: bash
+        run: |
+          cd freewheel-jailbreak
+          go build -ldflags "-H windowsgui" -o freewheel.exe ./cmd/freewheel
+          ls -lh freewheel.exe
+
+      - name: Upload FreeWheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: freewheel-windows
+          path: freewheel-jailbreak/freewheel.exe
+          retention-days: 30

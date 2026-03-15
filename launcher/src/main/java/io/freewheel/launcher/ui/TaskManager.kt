@@ -93,7 +93,7 @@ private fun ProcessRow(
     onKill: () -> Unit,
 ) {
     val isProtected = app.packageName == "io.freewheel.launcher" ||
-        app.packageName == "com.bowflex.serialbridge"
+        app.packageName == "io.freewheel.bridge"
 
     Row(
         modifier = Modifier

@@ -15,7 +15,7 @@ class TaskRepository(private val application: Application) {
     companion object {
         private val PROTECTED_PACKAGES = setOf(
             "io.freewheel.launcher",
-            "com.bowflex.serialbridge",
+            "io.freewheel.bridge",
             "com.bowflex.jailbreak",
         )
     }

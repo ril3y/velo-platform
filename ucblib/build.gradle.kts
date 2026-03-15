@@ -10,6 +10,10 @@ android {
         minSdk = 28
     }
 
+    buildFeatures {
+        aidl = true
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -18,6 +22,10 @@ android {
     lint {
         abortOnError = false
     }
+}
+
+dependencies {
+    testImplementation("junit:junit:4.13.2")
 }
 
 // Task to build a standalone JAR for consumer apps (BikeArcade, FreeRide)

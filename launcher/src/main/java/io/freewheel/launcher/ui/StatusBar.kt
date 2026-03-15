@@ -65,41 +65,6 @@ fun StatusBar(
 
         Spacer(Modifier.width(24.dp))
 
-        // Service dots — compact
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .clickable { onBridgeClick() }
-                .padding(horizontal = 4.dp, vertical = 4.dp),
-        ) {
-            StatusDot(
-                isHealthy = serviceStatus.serialBridgeRunning && serviceStatus.serialBridgeTcpAlive,
-            )
-            Spacer(Modifier.width(4.dp))
-            Text(
-                text = "Bridge",
-                style = MaterialTheme.typography.labelSmall,
-                color = TextMuted,
-            )
-        }
-
-        Spacer(Modifier.width(12.dp))
-
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .clickable { onOverlayClick() }
-                .padding(horizontal = 4.dp, vertical = 4.dp),
-        ) {
-            StatusDot(isHealthy = serviceStatus.overlayRunning)
-            Spacer(Modifier.width(4.dp))
-            Text(
-                text = "Overlay",
-                style = MaterialTheme.typography.labelSmall,
-                color = TextMuted,
-            )
-        }
-
         Spacer(Modifier.weight(1f))
 
         // WiFi

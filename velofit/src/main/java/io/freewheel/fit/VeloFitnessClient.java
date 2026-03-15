@@ -132,6 +132,93 @@ public class VeloFitnessClient {
         }
     }
 
+    /**
+     * Get current workout session state (active, owner, elapsed time).
+     * Returns null if launcher is unavailable.
+     */
+    public SessionState getSessionState() {
+        try {
+            Uri uri = Uri.parse("content://" + AUTHORITY + "/session");
+            Cursor c = resolver.query(uri, null, null, null, null);
+            if (c != null && c.moveToFirst()) {
+                SessionState state = new SessionState(
+                    c.getInt(c.getColumnIndexOrThrow("active")) != 0,
+                    c.getString(c.getColumnIndexOrThrow("ownerPackage")),
+                    c.getString(c.getColumnIndexOrThrow("ownerLabel")),
+                    c.getLong(c.getColumnIndexOrThrow("startTime")),
+                    c.getInt(c.getColumnIndexOrThrow("elapsedSeconds"))
+                );
+                c.close();
+                return state;
+            }
+            if (c != null) c.close();
+        } catch (Exception e) {
+            Log.w(TAG, "Session state query failed: " + e.getMessage());
+        }
+        return null;
+    }
+
+    /**
+     * Get the latest sensor data snapshot from the active session.
+     * Returns null if no active session or launcher unavailable.
+     */
+    public SensorSnapshot getLatestSensor() {
+        try {
+            Uri uri = Uri.parse("content://" + AUTHORITY + "/session/sensor");
+            Cursor c = resolver.query(uri, null, null, null, null);
+            if (c != null && c.moveToFirst()) {
+                SensorSnapshot snap = new SensorSnapshot(
+                    c.getInt(c.getColumnIndexOrThrow("resistance")),
+                    c.getInt(c.getColumnIndexOrThrow("rpm")),
+                    c.getInt(c.getColumnIndexOrThrow("tilt")),
+                    c.getFloat(c.getColumnIndexOrThrow("power")),
+                    c.getLong(c.getColumnIndexOrThrow("crankRevCount")),
+                    c.getInt(c.getColumnIndexOrThrow("crankEventTime")),
+                    c.getInt(c.getColumnIndexOrThrow("heartRate")),
+                    c.getString(c.getColumnIndexOrThrow("hrmDeviceName"))
+                );
+                c.close();
+                return snap;
+            }
+            if (c != null) c.close();
+        } catch (Exception e) {
+            Log.w(TAG, "Sensor snapshot query failed: " + e.getMessage());
+        }
+        return null;
+    }
+
+    /**
+     * Import a workout definition into the launcher's workout database.
+     * The JSON should follow the workout format with segments.
+     * Returns the URI of the imported workout, or null on failure.
+     */
+    public Uri importWorkout(String workoutJson) {
+        try {
+            android.content.ContentValues cv = new android.content.ContentValues();
+            org.json.JSONObject obj = new org.json.JSONObject(workoutJson);
+            cv.put("id", obj.optString("id", java.util.UUID.randomUUID().toString()));
+            cv.put("name", obj.optString("name", "Imported Workout"));
+            cv.put("description", obj.optString("description", ""));
+            cv.put("durationMinutes", obj.optInt("durationMinutes", 0));
+            cv.put("type", obj.optString("type", "custom"));
+            cv.put("category", obj.optString("category", "Imported"));
+            cv.put("coach", obj.optString("coach", ""));
+            cv.put("optionalMedia", obj.optBoolean("optionalMedia", false) ? 1 : 0);
+            cv.put("color", obj.optString("color", "#22D3EE"));
+            cv.put("segmentsJson", obj.optJSONArray("segments") != null
+                ? obj.getJSONArray("segments").toString() : "[]");
+            cv.put("source", obj.optString("source", "external"));
+            cv.put("sourceLabel", obj.optString("sourceLabel", "External App"));
+
+            Uri result = resolver.insert(URI_WORKOUTS, cv);
+            Log.i(TAG, "Workout imported: " + cv.getAsString("name") + " → " + result);
+            return result;
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to import workout: " + e.getMessage());
+            return null;
+        }
+    }
+
     /** Clear cached config (e.g., if user updates their profile) */
     public void invalidateCache() {
         cachedConfig = null;

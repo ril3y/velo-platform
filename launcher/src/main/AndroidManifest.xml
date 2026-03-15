@@ -6,8 +6,12 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
+        android:name=".VeloLauncherApp"
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="VeloLauncher"
@@ -48,11 +52,36 @@
             </intent-filter>
         </receiver>
 
-        <!-- ContentProvider: exposes workouts, rides, profile to other apps -->
+        <!-- ContentProvider: exposes workouts, rides, profile, session to other apps -->
         <provider
             android:name=".data.VeloContentProvider"
             android:authorities="io.freewheel.launcher.provider"
             android:exported="true"
             android:grantUriPermissions="true" />
+
+        <!-- WorkoutSession AIDL service: external apps bind to control workouts -->
+        <service
+            android:name=".session.WorkoutSessionService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="io.freewheel.launcher.WORKOUT_SESSION" />
+            </intent-filter>
+        </service>
+
+        <!-- FileProvider for sharing APK with package installer -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_provider_paths" />
+        </provider>
+
+        <!-- Floating stats overlay service -->
+        <service
+            android:name=".overlay.RideOverlayService"
+            android:exported="false" />
     </application>
 </manifest>

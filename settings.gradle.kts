@@ -17,6 +17,7 @@ dependencyResolutionManagement {
 rootProject.name = "velo-platform"
 
 include(":launcher")
-include(":serialbridge")
+include(":freeride")
+include(":freewheelbridge")
 include(":ucblib")
 include(":velofit")

@@ -93,6 +93,9 @@ dependencies {
     // UCB library (bike sensor protocol)
     implementation(project(":ucblib"))
 
+    // VeloFit library (AIDL interfaces for external app API)
+    implementation(project(":velofit"))
+
     // Compose BOM
     val composeBom = platform("androidx.compose:compose-bom:2024.02.00")
     implementation(composeBom)

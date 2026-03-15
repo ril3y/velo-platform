@@ -1,6 +1,8 @@
 package io.freewheel.launcher.system
 
+import android.content.ContentResolver
 import android.content.SharedPreferences
+import android.provider.Settings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -12,6 +14,7 @@ import kotlinx.coroutines.launch
 class ScreenSaverManager(
     private val prefs: SharedPreferences,
     private val scope: CoroutineScope,
+    private val contentResolver: ContentResolver,
     private val isRideActive: () -> Boolean,
 ) {
 
@@ -37,6 +40,7 @@ class ScreenSaverManager(
 
     private var lastInteractionTime = System.currentTimeMillis()
     private var screenSaverJob: Job? = null
+    private var savedBrightness: Int = -1
 
     fun onUserInteraction() {
         lastInteractionTime = System.currentTimeMillis()
@@ -45,6 +49,7 @@ class ScreenSaverManager(
             shiftIndex = (shiftIndex + 1) % shiftPattern.size
             _offsetX.value = shiftPattern[shiftIndex]
             _offsetY.value = shiftPattern[(shiftIndex + 3) % shiftPattern.size]
+            restoreBrightness()
         }
         _screenDimmed.value = false
         _screenOff.value = false
@@ -71,6 +76,9 @@ class ScreenSaverManager(
                 val idle = System.currentTimeMillis() - lastInteractionTime
                 when {
                     idle >= offTimeoutMs -> {
+                        if (!_screenOff.value) {
+                            setBrightness(0)
+                        }
                         _screenOff.value = true
                         _screenDimmed.value = true
                     }
@@ -87,7 +95,45 @@ class ScreenSaverManager(
         }
     }
 
+    private fun setBrightness(value: Int) {
+        try {
+            if (savedBrightness < 0) {
+                savedBrightness = Settings.System.getInt(
+                    contentResolver,
+                    Settings.System.SCREEN_BRIGHTNESS,
+                    128,
+                )
+            }
+            Settings.System.putInt(
+                contentResolver,
+                Settings.System.SCREEN_BRIGHTNESS_MODE,
+                Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL,
+            )
+            Settings.System.putInt(
+                contentResolver,
+                Settings.System.SCREEN_BRIGHTNESS,
+                value,
+            )
+        } catch (_: Exception) {
+            // WRITE_SETTINGS not granted — fall back to overlay-only
+        }
+    }
+
+    private fun restoreBrightness() {
+        if (savedBrightness >= 0) {
+            try {
+                Settings.System.putInt(
+                    contentResolver,
+                    Settings.System.SCREEN_BRIGHTNESS,
+                    savedBrightness,
+                )
+            } catch (_: Exception) {}
+            savedBrightness = -1
+        }
+    }
+
     fun destroy() {
         screenSaverJob?.cancel()
+        restoreBrightness()
     }
 }

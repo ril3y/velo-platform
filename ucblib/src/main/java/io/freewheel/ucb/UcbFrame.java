@@ -87,9 +87,14 @@ public class UcbFrame {
         return frame;
     }
 
-    /** Build and encode a request frame. */
+    /** Build and encode a request frame (Purpose.GET). */
     public static byte[] buildRequest(int msgId, int counter, byte[] data) {
         return new UcbFrame(MSG_TYPE_REQUEST, msgId, counter, data).encode();
+    }
+
+    /** Build and encode a post frame (Purpose.POST — used for OTA, calibration, and operational commands). */
+    public static byte[] buildPost(int msgId, int counter, byte[] data) {
+        return new UcbFrame(MSG_TYPE_POST, msgId, counter, data).encode();
     }
 
     /** CRC32 with final XOR undone, matching Nautilus UCB firmware. */

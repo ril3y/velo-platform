@@ -29,6 +29,8 @@ class AppRepository(private val application: Application) {
 
     private val knownFitnessPackages = setOf(
         "com.nautilus.bowflex.usb",
+        "io.freewheel.freeride",
+        "com.bikearcade.app",
     )
 
     private val _allApps = MutableStateFlow<List<AppInfo>>(emptyList())
