@@ -213,12 +213,12 @@ func Run() {
 	headerRow := container.NewHBox(logoImg, container.NewPadded(titleBlock))
 
 	// --- Quick-start hints ---
-	hint1 := canvas.NewText("1. On bike: tap top-right corner 9x, open Utility App", color.NRGBA{R: 170, G: 170, B: 190, A: 255})
-	hint1.TextSize = 11
+	hint1 := canvas.NewText("1. On bike: at the JRNY boot screen, tap top-right corner 9x", color.NRGBA{R: 170, G: 170, B: 190, A: 255})
+	hint1.TextSize = 13
 	hint2 := canvas.NewText("2. Here: Scan or enter IP, Pre-Check, then Jailbreak", color.NRGBA{R: 170, G: 170, B: 190, A: 255})
-	hint2.TextSize = 11
+	hint2.TextSize = 13
 	hint3 := canvas.NewText("3. On bike: tap Allow if USB debugging prompt appears", color.NRGBA{R: 170, G: 170, B: 190, A: 255})
-	hint3.TextSize = 11
+	hint3.TextSize = 13
 	hintsBox := container.NewVBox(hint1, hint2, hint3)
 
 	// --- Accent line ---
