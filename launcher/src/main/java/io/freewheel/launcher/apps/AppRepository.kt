@@ -60,10 +60,23 @@ class AppRepository(private val application: Application) {
                     val category = detectCategory(pm, pkg)
                     AppInfo(pkg, label, icon, true, category)
                 }
-                .sortedWith(compareBy({ it.category.ordinal }, { it.label.lowercase() }))
+                .toMutableList()
 
-            _allApps.value = apps
-            _fitnessApps.value = apps.filter { it.category == TileCategory.FITNESS }
+            // Ensure Android Settings is always available even if it lacks CATEGORY_LAUNCHER
+            val settingsPkg = "com.android.settings"
+            if (apps.none { it.packageName == settingsPkg }) {
+                try {
+                    val settingsInfo = pm.getApplicationInfo(settingsPkg, 0)
+                    val label = pm.getApplicationLabel(settingsInfo).toString()
+                    val icon = pm.getApplicationIcon(settingsInfo)
+                    apps.add(AppInfo(settingsPkg, label, icon, true, TileCategory.SYSTEM))
+                } catch (_: PackageManager.NameNotFoundException) {}
+            }
+
+            val sortedApps = apps.sortedWith(compareBy({ it.category.ordinal }, { it.label.lowercase() }))
+
+            _allApps.value = sortedApps
+            _fitnessApps.value = sortedApps.filter { it.category == TileCategory.FITNESS }
             updateRecentApps()
         }
     }
@@ -127,9 +140,17 @@ class AppRepository(private val application: Application) {
     }
 
     fun launchApp(packageName: String) {
-        val pm = application.packageManager
-        val intent = pm.getLaunchIntentForPackage(packageName) ?: return
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val intent = when (packageName) {
+            "com.android.settings" -> Intent(android.provider.Settings.ACTION_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            else -> {
+                val pm = application.packageManager
+                pm.getLaunchIntentForPackage(packageName)?.apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                } ?: return
+            }
+        }
         application.startActivity(intent)
         trackLaunch(packageName)
     }
