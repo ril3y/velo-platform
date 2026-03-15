@@ -4,29 +4,16 @@ import (
 	_ "embed"
 	"os"
 	"path/filepath"
+
+	"github.com/ril3y/freewheel-jailbreak/internal/update"
 )
-
-//go:embed jailbreak.apk
-var embeddedJailbreak []byte
-
-//go:embed velolauncher.apk
-var embeddedVeloLauncher []byte
-
-//go:embed freeride.apk
-var embeddedFreeRide []byte
-
-//go:embed bikearcade.apk
-var embeddedBikeArcade []byte
-
-//go:embed serialbridge.apk
-var embeddedSerialBridge []byte
 
 //go:embed logo.png
 var EmbeddedLogo []byte
 
-// FindAPK returns a path to the APK, extracting from embedded data if needed.
-// Checks for local file overrides first (next to exe or in assets/), then falls
-// back to extracting the embedded APK to a temp file.
+// FindAPK returns a path to the APK by name.
+// Search order: local file overrides (next to exe, cwd, assets/), then cached APKs
+// downloaded from GitHub Releases.
 func FindAPK(name string) string {
 	candidates := []string{name + ".apk"}
 	if name == "jailbreak" {
@@ -38,7 +25,7 @@ func FindAPK(name string) string {
 		exeDir = filepath.Dir(exe)
 	}
 
-	// Check cwd, exe dir, and assets/ subdir
+	// Check local overrides: cwd, exe dir, assets/ subdir
 	for _, c := range candidates {
 		for _, dir := range []string{".", exeDir, "assets", filepath.Join(exeDir, "assets")} {
 			if dir == "" {
@@ -51,26 +38,6 @@ func FindAPK(name string) string {
 		}
 	}
 
-	// Fall back to embedded APK — write to temp file
-	var data []byte
-	switch name {
-	case "jailbreak":
-		data = embeddedJailbreak
-	case "velolauncher":
-		data = embeddedVeloLauncher
-	case "freeride":
-		data = embeddedFreeRide
-	case "bikearcade":
-		data = embeddedBikeArcade
-	case "serialbridge":
-		data = embeddedSerialBridge
-	}
-	if len(data) > 0 {
-		tmp := filepath.Join(os.TempDir(), name+".apk")
-		if err := os.WriteFile(tmp, data, 0644); err == nil {
-			return tmp
-		}
-	}
-
-	return ""
+	// Fall back to cached APK from GitHub Releases
+	return update.FindCachedAPK(name)
 }

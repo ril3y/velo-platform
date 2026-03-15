@@ -16,6 +16,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # needed for git describe versioning
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -106,46 +108,17 @@ jobs:
   jailbreak:
     name: FreeWheel Jailbreak (Windows)
     runs-on: windows-latest
-    needs: android
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # needed for git describe
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version-file: freewheel-jailbreak/go.mod
           cache-dependency-path: freewheel-jailbreak/go.sum
-
-      - name: Download APKs
-        uses: actions/download-artifact@v4
-        with:
-          name: android-apks
-          path: apk-artifacts
-
-      - name: Embed APKs into assets
-        shell: bash
-        run: |
-          cd freewheel-jailbreak/assets
-
-          # Copy built APKs
-          [ -f ../../apk-artifacts/velolauncher.apk ] && cp ../../apk-artifacts/velolauncher.apk velolauncher.apk
-          [ -f ../../apk-artifacts/freeride.apk ] && cp ../../apk-artifacts/freeride.apk freeride.apk
-          if [ -f ../../apk-artifacts/serialbridge.apk ]; then
-            cp ../../apk-artifacts/serialbridge.apk serialbridge.apk
-          elif [ -f ../../apk-artifacts/serialbridge-unsigned.apk ]; then
-            cp ../../apk-artifacts/serialbridge-unsigned.apk serialbridge.apk
-          else
-            touch serialbridge.apk
-          fi
-
-          # Create placeholder APKs for external assets not built in CI
-          # These get replaced with real APKs in the full build.bat workflow
-          for apk in jailbreak.apk bikearcade.apk; do
-            [ -f "$apk" ] || touch "$apk"
-          done
-
-          ls -lh *.apk
 
       - name: Build FreeWheel
         shell: bash

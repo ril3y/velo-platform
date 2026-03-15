@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image/color"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 
 	"github.com/ril3y/freewheel-jailbreak/assets"
 	"github.com/ril3y/freewheel-jailbreak/internal/device"
+	"github.com/ril3y/freewheel-jailbreak/internal/update"
 )
 
 // Version and GitHash are set by main via ldflags.
@@ -264,9 +266,128 @@ func Run() {
 		container.NewBorder(topPanel, nil, nil, nil, logPanel),
 	))
 
+	// --- Startup: check for updates + download APKs ---
 	go func() {
 		time.Sleep(300 * time.Millisecond)
-		log.Info(fmt.Sprintf("FreeWheel v%s (%s) ready. Native ADB -- no external tools needed.", Version, GitHash))
+		log.Info(fmt.Sprintf("FreeWheel v%s (%s) ready.", Version, GitHash))
+
+		// Check GitHub Releases for latest version and APKs
+		log.Dim("Checking for updates...")
+		rel, err := update.FetchLatestRelease()
+		if err != nil {
+			log.Warn(fmt.Sprintf("Update check failed: %v", err))
+			log.Dim("Using cached APKs if available.")
+
+			if update.CachedVersion() == "" {
+				log.Error("No cached APKs found! Jailbreak requires an internet connection on first run.")
+				log.Warn("Please check your internet connection and restart FreeWheel.")
+			} else {
+				log.Dim(fmt.Sprintf("Cached release: %s", update.CachedVersion()))
+			}
+			return
+		}
+
+		remoteTag := rel.TagName
+		cachedTag := update.CachedVersion()
+		log.Dim(fmt.Sprintf("Latest release: %s", remoteTag))
+
+		// Check for self-update (newer freewheel.exe)
+		if Version != "dev" && update.IsNewer(remoteTag, Version) {
+			fyne.Do(func() {
+				log.Step("")
+				log.Success(fmt.Sprintf("FreeWheel update available: %s (you have %s)", remoteTag, Version))
+
+				exeAsset := update.ExeAsset(rel)
+				if exeAsset != nil {
+					log.Info("Downloading updated freewheel.exe...")
+				}
+			})
+
+			if exeAsset := update.ExeAsset(rel); exeAsset != nil {
+				exePath, _ := os.Executable()
+				updatePath := filepath.Join(filepath.Dir(exePath), "freewheel-update.exe")
+
+				err := update.DownloadFile(exeAsset.BrowserDownloadURL, updatePath, func(dl, total int64) {
+					if total > 0 {
+						pct := float64(dl) / float64(total) * 100
+						if int(pct)%25 == 0 {
+							fyne.Do(func() {
+								log.Dim(fmt.Sprintf("  freewheel.exe: %.0f%%", pct))
+							})
+						}
+					}
+				})
+				if err == nil {
+					fyne.Do(func() {
+						log.Success(fmt.Sprintf("Updated exe saved to: %s", updatePath))
+						log.Warn("Close FreeWheel, replace freewheel.exe with freewheel-update.exe, and restart.")
+					})
+				} else {
+					fyne.Do(func() {
+						log.Warn(fmt.Sprintf("Self-update download failed: %v", err))
+					})
+				}
+			}
+		}
+
+		// Download/update APKs if cache is stale or missing
+		if cachedTag == remoteTag {
+			log.Dim("APKs are up to date.")
+			return
+		}
+
+		apks := update.APKAssets(rel)
+		if len(apks) == 0 {
+			log.Warn("No APK assets found in latest release.")
+			return
+		}
+
+		fyne.Do(func() {
+			if cachedTag == "" {
+				log.Info(fmt.Sprintf("Downloading APKs from release %s...", remoteTag))
+			} else {
+				log.Info(fmt.Sprintf("Updating APKs: %s → %s", cachedTag, remoteTag))
+			}
+		})
+
+		allOK := true
+		for i, apk := range apks {
+			name := update.APKNameFromAsset(apk.Name)
+			destPath := filepath.Join(update.APKCacheDir(), apk.Name)
+
+			fyne.Do(func() {
+				log.Dim(fmt.Sprintf("  [%d/%d] %s (%.1f MB)", i+1, len(apks), apk.Name, float64(apk.Size)/1024/1024))
+			})
+
+			err := update.DownloadFile(apk.BrowserDownloadURL, destPath, func(dl, total int64) {
+				if total > 0 {
+					pct := float64(dl) / float64(total) * 100
+					// Log at 50% and 100%
+					if (int(pct) == 50 || int(pct) == 100) && int(pct) > 0 {
+						fyne.Do(func() {
+							log.Dim(fmt.Sprintf("    %s: %.0f%%", name, pct))
+						})
+					}
+				}
+			})
+			if err != nil {
+				fyne.Do(func() {
+					log.Error(fmt.Sprintf("  Failed to download %s: %v", apk.Name, err))
+				})
+				allOK = false
+			}
+		}
+
+		if allOK {
+			update.WriteCachedVersion(remoteTag)
+			fyne.Do(func() {
+				log.Success(fmt.Sprintf("All APKs cached (%s). Ready to jailbreak!", remoteTag))
+			})
+		} else {
+			fyne.Do(func() {
+				log.Warn("Some APKs failed to download. Jailbreak may be incomplete.")
+			})
+		}
 	}()
 
 	w.ShowAndRun()

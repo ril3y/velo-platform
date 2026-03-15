@@ -18,6 +18,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # needed for git describe versioning
 
       - name: Extract version from tag
         id: version
@@ -103,10 +105,11 @@ jobs:
   jailbreak:
     name: Build FreeWheel (Windows)
     runs-on: windows-latest
-    needs: build
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # needed for git describe
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -114,26 +117,10 @@ jobs:
           go-version-file: freewheel-jailbreak/go.mod
           cache-dependency-path: freewheel-jailbreak/go.sum
 
-      - name: Download release artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: release-artifacts
-          path: release
-
-      - name: Embed APKs and build
+      - name: Build FreeWheel
         shell: bash
         run: |
-          cd freewheel-jailbreak/assets
-          cp ../../release/velolauncher.apk velolauncher.apk
-          cp ../../release/freeride.apk freeride.apk
-          cp ../../release/serialbridge.apk serialbridge.apk
-
-          # Placeholder for external APKs not built in CI
-          for apk in jailbreak.apk bikearcade.apk; do
-            [ -f "$apk" ] || touch "$apk"
-          done
-
-          cd ..
+          cd freewheel-jailbreak
           VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
           VERSION=${VERSION#v}
           HASH=$(git rev-parse --short=8 HEAD)
