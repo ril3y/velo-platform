@@ -128,6 +128,11 @@ jobs:
           cp ../../release/freeride.apk freeride.apk
           cp ../../release/serialbridge.apk serialbridge.apk
 
+          # Placeholder for external APKs not built in CI
+          for apk in jailbreak.apk bikearcade.apk; do
+            [ -f "$apk" ] || touch "$apk"
+          done
+
           cd ..
           go build -ldflags "-H windowsgui" -o freewheel.exe ./cmd/freewheel
           ls -lh freewheel.exe

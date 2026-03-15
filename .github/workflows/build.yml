@@ -128,10 +128,16 @@ jobs:
         run: |
           cd freewheel-jailbreak/assets
 
-          # Copy built APKs (if signed bridge exists, use it; otherwise keep existing embedded)
+          # Copy built APKs
           [ -f ../../apk-artifacts/velolauncher.apk ] && cp ../../apk-artifacts/velolauncher.apk velolauncher.apk
           [ -f ../../apk-artifacts/freeride.apk ] && cp ../../apk-artifacts/freeride.apk freeride.apk
           [ -f ../../apk-artifacts/serialbridge.apk ] && cp ../../apk-artifacts/serialbridge.apk serialbridge.apk
+
+          # Create placeholder APKs for external assets not built in CI
+          # These get replaced with real APKs in the full build.bat workflow
+          for apk in jailbreak.apk bikearcade.apk; do
+            [ -f "$apk" ] || touch "$apk"
+          done
 
           ls -lh *.apk
 
