@@ -131,7 +131,13 @@ jobs:
           # Copy built APKs
           [ -f ../../apk-artifacts/velolauncher.apk ] && cp ../../apk-artifacts/velolauncher.apk velolauncher.apk
           [ -f ../../apk-artifacts/freeride.apk ] && cp ../../apk-artifacts/freeride.apk freeride.apk
-          [ -f ../../apk-artifacts/serialbridge.apk ] && cp ../../apk-artifacts/serialbridge.apk serialbridge.apk
+          if [ -f ../../apk-artifacts/serialbridge.apk ]; then
+            cp ../../apk-artifacts/serialbridge.apk serialbridge.apk
+          elif [ -f ../../apk-artifacts/serialbridge-unsigned.apk ]; then
+            cp ../../apk-artifacts/serialbridge-unsigned.apk serialbridge.apk
+          else
+            touch serialbridge.apk
+          fi
 
           # Create placeholder APKs for external assets not built in CI
           # These get replaced with real APKs in the full build.bat workflow
