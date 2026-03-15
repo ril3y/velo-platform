@@ -94,14 +94,14 @@ Ride data for logging. Built with `RideStats.Builder`:
 
 Like ucblib, velofit is used two ways:
 
-1. **Gradle module dependency** — if your app is in the monorepo
+1. **Gradle module dependency** — in-repo apps (VeloLauncher, FreeRide) use `implementation(project(":velofit"))`
 2. **Standalone JAR** — for consumer apps outside this monorepo
 
 ```bash
 ./gradlew :velofit:buildClassesJar
 # Output: velofit/build/libs/velofit.jar
 
-cp velofit/build/libs/velofit.jar ../freeride/app/libs/
+cp velofit/build/libs/velofit.jar ../bikearcade/app/libs/
 ```
 
 ## ContentProvider URIs

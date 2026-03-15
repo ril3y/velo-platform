@@ -1,7 +1,9 @@
 package io.freewheel.ucb;
 
 /**
- * UCB message ID constants. Sourced from decompiled Nautilus UcbMessageIds enum.
+ * UCB message ID constants.
+ * Verified against Ghidra analysis of UCB firmware binary (see hardware/ucb-firmware/ANALYSIS.md).
+ * IDs 0x15-0x17 corrected from decompiled Nautilus names to match firmware ground truth.
  */
 public final class UcbMessageIds {
     private UcbMessageIds() {}
@@ -27,9 +29,9 @@ public final class UcbMessageIds {
     public static final int WORKOUT_SUMMARY     = 0x12;
     public static final int BLE_HR_DATA         = 0x13;
     public static final int LOGGING_CONTROL     = 0x14;
-    public static final int LOG_DATA            = 0x15;
-    public static final int LOG_ENTRY           = 0x16;
-    public static final int FIRMWARE_UPDATE     = 0x17;
+    public static final int OTA_SESSION_CONTROL  = 0x15;
+    public static final int CONNECT_SESSION_CTRL = 0x16;
+    public static final int NVRAM_WRITE_LOGICAL  = 0x17;
     public static final int SYSTEM_DATA         = 0x18;
     public static final int KEY_PRESS           = 0x19;
     public static final int SAFETY_KEY          = 0x1A;
@@ -72,9 +74,9 @@ public final class UcbMessageIds {
             case WORKOUT_SUMMARY:     return "WORKOUT_SUMMARY";
             case BLE_HR_DATA:         return "BLE_HR_DATA";
             case LOGGING_CONTROL:     return "LOGGING_CONTROL";
-            case LOG_DATA:            return "LOG_DATA";
-            case LOG_ENTRY:           return "LOG_ENTRY";
-            case FIRMWARE_UPDATE:     return "FIRMWARE_UPDATE";
+            case OTA_SESSION_CONTROL: return "OTA_SESSION_CONTROL";
+            case CONNECT_SESSION_CTRL: return "CONNECT_SESSION_CTRL";
+            case NVRAM_WRITE_LOGICAL: return "NVRAM_WRITE_LOGICAL";
             case SYSTEM_DATA:         return "SYSTEM_DATA";
             case KEY_PRESS:           return "KEY_PRESS";
             case SAFETY_KEY:          return "SAFETY_KEY";

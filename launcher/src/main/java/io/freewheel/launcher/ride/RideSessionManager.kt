@@ -1,9 +1,8 @@
 package io.freewheel.launcher.ride
 
-import android.content.Context
-import io.freewheel.ucb.BikeServiceClient
-import io.freewheel.ucb.SensorData
+import io.freewheel.launcher.bridge.BridgeConnectionManager
 import io.freewheel.launcher.data.RideRecord
+import io.freewheel.ucb.SensorData
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -12,8 +11,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+/**
+ * Pure data accumulator for ride statistics. Collects sensor data from
+ * BridgeConnectionManager's StateFlows and computes derived metrics.
+ * No longer creates its own BikeServiceClient.
+ */
 class RideSessionManager(
-    private val context: Context,
+    private val bridge: BridgeConnectionManager,
     private val scope: CoroutineScope,
     private val rideRepository: RideRepository,
 ) {
@@ -45,11 +49,10 @@ class RideSessionManager(
     private val _rideHeartRate = MutableStateFlow(0)
     val rideHeartRate: StateFlow<Int> = _rideHeartRate.asStateFlow()
 
-    private val _rideConnected = MutableStateFlow(false)
-    val rideConnected: StateFlow<Boolean> = _rideConnected.asStateFlow()
+    // Delegate connection state to bridge
+    val rideConnected: StateFlow<Boolean> get() = bridge.connected
 
     // Internal state
-    private var bikeClient: BikeServiceClient? = null
     private var rideStartTime = 0L
     private var ridePowerSum = 0L
     private var rideRpmSum = 0L
@@ -57,10 +60,21 @@ class RideSessionManager(
     private var rideSampleCount = 0
     private var rideMaxPower = 0
     private var rideTimerJob: Job? = null
+    private var sensorCollectorJob: Job? = null
+    private var heartRateCollectorJob: Job? = null
+    private var workoutWatcherJob: Job? = null
     private var lastSampleTime = 0L
 
     fun startRide() {
         if (_rideActive.value) return
+
+        // Start workout on the bridge
+        val ok = bridge.startWorkout()
+        if (!ok && !bridge.workoutActive.value) {
+            // Bridge not connected or couldn't start — still allow tracking
+            // (the bridge may connect later)
+        }
+
         _rideActive.value = true
         rideStartTime = System.currentTimeMillis()
         lastSampleTime = rideStartTime
@@ -77,62 +91,34 @@ class RideSessionManager(
         _rideSpeedMph.value = 0f
         _rideDistanceMiles.value = 0f
         _rideHeartRate.value = 0
-        _rideConnected.value = false
 
-        val client = BikeServiceClient(context)
-        bikeClient = client
-        client.addListener(object : BikeServiceClient.ListenerAdapter() {
-            override fun onSensorData(data: SensorData) {
-                val power = data.power.toInt()
-                _ridePower.value = power
-                _rideRpm.value = data.rpm
-                _rideResistance.value = data.resistanceLevel
+        // Set launcher as the active owner (internal ride, no external app)
+        bridge.setActiveOwner("io.freewheel.launcher", "VeloLauncher", null)
 
-                // Speed from power using simplified cycling power model
-                val speedMps = if (power > 0) Math.cbrt(power.toDouble() / 4.0) else 0.0
-                val currentSpeedMph = (speedMps * 2.24).toFloat().coerceAtMost(45f)
-                _rideSpeedMph.value = currentSpeedMph
-
-                // Update distance incrementally
-                val now = System.currentTimeMillis()
-                val deltaHours = (now - lastSampleTime) / 3_600_000.0
-                _rideDistanceMiles.value += (currentSpeedMph * deltaHours).toFloat()
-                lastSampleTime = now
-
-                ridePowerSum += power
-                rideRpmSum += data.rpm
-                rideResistanceSum += data.resistanceLevel
-                rideSampleCount++
-                if (power > rideMaxPower) rideMaxPower = power
-
-                // Calories: metabolic cost = power / 0.25, kcal = cost * hours / 1.163
-                val elapsedHours = (now - rideStartTime) / 3_600_000.0
-                val avgPower = if (rideSampleCount > 0) ridePowerSum.toDouble() / rideSampleCount else 0.0
-                _rideCalories.value = ((avgPower / 0.25) * elapsedHours / 1.163).toInt()
+        // Collect sensor data from bridge
+        sensorCollectorJob = scope.launch {
+            bridge.sensorData.collect { data ->
+                if (_rideActive.value) {
+                    processSensorData(data)
+                }
             }
+        }
 
-            override fun onConnectionChanged(connected: Boolean, message: String) {
-                _rideConnected.value = connected
+        // Collect heart rate from bridge
+        heartRateCollectorJob = scope.launch {
+            bridge.heartRate.collect { hr ->
+                _rideHeartRate.value = hr
             }
+        }
 
-            override fun onServiceConnected() {
-                _rideConnected.value = true
-                // Service is connected, start the workout on SerialBridge
-                client.startWorkout()
-            }
-
-            override fun onServiceDisconnected() {
-                _rideConnected.value = false
-            }
-
-            override fun onWorkoutStateChanged(active: Boolean, reason: String) {
-                // If watchdog stopped the workout, end the ride
-                if (!active && _rideActive.value && reason != "client_requested") {
+        // Watch for external workout stop (e.g. watchdog)
+        workoutWatcherJob = scope.launch {
+            bridge.workoutActive.collect { active ->
+                if (!active && _rideActive.value) {
                     stopRide()
                 }
             }
-        })
-        client.bind()
+        }
 
         // Timer
         rideTimerJob = scope.launch {
@@ -148,10 +134,14 @@ class RideSessionManager(
         _rideActive.value = false
         rideTimerJob?.cancel()
         rideTimerJob = null
+        sensorCollectorJob?.cancel()
+        sensorCollectorJob = null
+        heartRateCollectorJob?.cancel()
+        heartRateCollectorJob = null
+        workoutWatcherJob?.cancel()
+        workoutWatcherJob = null
 
-        bikeClient?.stopWorkout()
-        bikeClient?.unbind()
-        bikeClient = null
+        bridge.stopWorkout()
 
         val elapsed = _rideElapsedSeconds.value
         if (elapsed < 30) return // don't save rides shorter than 30s
@@ -173,14 +163,45 @@ class RideSessionManager(
                     avgSpeedMph = avgSpeed,
                     distanceMiles = _rideDistanceMiles.value,
                     avgResistance = avgRes,
+                    avgHeartRate = _rideHeartRate.value,
                 )
             )
         }
     }
 
+    private fun processSensorData(data: SensorData) {
+        val power = data.power.toInt()
+        _ridePower.value = power
+        _rideRpm.value = data.rpm
+        _rideResistance.value = data.resistanceLevel
+
+        // Speed from power using simplified cycling power model
+        val speedMps = if (power > 0) Math.cbrt(power.toDouble() / 4.0) else 0.0
+        val currentSpeedMph = (speedMps * 2.24).toFloat().coerceAtMost(45f)
+        _rideSpeedMph.value = currentSpeedMph
+
+        // Update distance incrementally
+        val now = System.currentTimeMillis()
+        val deltaHours = (now - lastSampleTime) / 3_600_000.0
+        _rideDistanceMiles.value += (currentSpeedMph * deltaHours).toFloat()
+        lastSampleTime = now
+
+        ridePowerSum += power
+        rideRpmSum += data.rpm
+        rideResistanceSum += data.resistanceLevel
+        rideSampleCount++
+        if (power > rideMaxPower) rideMaxPower = power
+
+        // Calories: metabolic cost = power / 0.25, kcal = cost * hours / 1.163
+        val elapsedHours = (now - rideStartTime) / 3_600_000.0
+        val avgPower = if (rideSampleCount > 0) ridePowerSum.toDouble() / rideSampleCount else 0.0
+        _rideCalories.value = ((avgPower / 0.25) * elapsedHours / 1.163).toInt()
+    }
+
     fun destroy() {
-        bikeClient?.stopWorkout()
-        bikeClient?.unbind()
-        bikeClient = null
+        rideTimerJob?.cancel()
+        sensorCollectorJob?.cancel()
+        heartRateCollectorJob?.cancel()
+        workoutWatcherJob?.cancel()
     }
 }

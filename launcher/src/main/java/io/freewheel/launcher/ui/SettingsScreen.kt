@@ -19,7 +19,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import io.freewheel.launcher.BuildConfig
 import io.freewheel.launcher.service.ServiceStatus
+import io.freewheel.launcher.update.UpdateStatus
 import io.freewheel.launcher.ui.theme.*
 
 private enum class SettingsCategory(val label: String) {
@@ -27,6 +29,9 @@ private enum class SettingsCategory(val label: String) {
     RIDE_DATA("Ride Data"),
     DISPLAY("Display"),
     HOME_TILES("Home Tiles"),
+    DIAGNOSTICS("Diagnostics"),
+    UCB_FIRMWARE("UCB Firmware"),
+    CALIBRATION("Calibration"),
     SYSTEM("System"),
     ABOUT("About"),
 }
@@ -50,6 +55,27 @@ fun SettingsScreen(
     autoRestartOverlay: Boolean = true,
     onAutoRestartBridgeChange: (Boolean) -> Unit = {},
     onAutoRestartOverlayChange: (Boolean) -> Unit = {},
+    // Diagnostics
+    diagnosticsState: DiagnosticsState = DiagnosticsState(),
+    onToggleRawMonitor: (Boolean) -> Unit = {},
+    // OTA firmware flash
+    otaFlashState: OtaFlashState = OtaFlashState(),
+    onPickFirmwareFile: () -> Unit = {},
+    onStartOtaFlash: () -> Unit = {},
+    onCancelOtaFlash: () -> Unit = {},
+    // Calibration
+    calibrationState: CalibrationState = CalibrationState(),
+    onStartCalibration: () -> Unit = {},
+    onConfirmCalibrationStep: () -> Unit = {},
+    onCancelCalibration: () -> Unit = {},
+    // Update
+    updateStatus: UpdateStatus = UpdateStatus.IDLE,
+    updateLatestVersion: String = "",
+    updateChangelog: String = "",
+    updateDownloadProgress: Float = 0f,
+    onCheckForUpdate: () -> Unit = {},
+    onDownloadUpdate: () -> Unit = {},
+    onInstallUpdate: () -> Unit = {},
 ) {
     var selectedCategory by remember { mutableStateOf(SettingsCategory.SERVICES) }
 
@@ -130,13 +156,13 @@ fun SettingsScreen(
                     SettingsCategory.SERVICES -> {
                         PaneTitle("Services")
                         ServiceRow(
-                            name = "SerialBridge (TCP:9999)",
+                            name = "FreewheelBridge (TCP:9999)",
                             running = serviceStatus.serialBridgeRunning,
                             detail = if (serviceStatus.serialBridgeTcpAlive) "TCP alive" else "TCP down",
                             onRestart = onRestartBridge,
                         )
                         ToggleRow(
-                            label = "Auto-restart SerialBridge",
+                            label = "Auto-restart FreewheelBridge",
                             checked = autoRestartBridge,
                             onCheckedChange = onAutoRestartBridgeChange,
                         )
@@ -212,6 +238,28 @@ fun SettingsScreen(
                             }
                         }
                     }
+                    SettingsCategory.DIAGNOSTICS -> {
+                        DiagnosticsPane(
+                            state = diagnosticsState,
+                            onToggleRawMonitor = onToggleRawMonitor,
+                        )
+                    }
+                    SettingsCategory.UCB_FIRMWARE -> {
+                        OtaFlashPane(
+                            state = otaFlashState,
+                            onPickFile = onPickFirmwareFile,
+                            onStartFlash = onStartOtaFlash,
+                            onCancelFlash = onCancelOtaFlash,
+                        )
+                    }
+                    SettingsCategory.CALIBRATION -> {
+                        CalibrationPane(
+                            state = calibrationState,
+                            onStartCalibration = onStartCalibration,
+                            onConfirmStep = onConfirmCalibrationStep,
+                            onCancel = onCancelCalibration,
+                        )
+                    }
                     SettingsCategory.SYSTEM -> {
                         PaneTitle("System")
                         OutlinedButton(
@@ -224,10 +272,132 @@ fun SettingsScreen(
                     }
                     SettingsCategory.ABOUT -> {
                         PaneTitle("About")
-                        InfoRow("VeloLauncher", "1.0.0")
-                        InfoRow("Package", "io.freewheel.launcher")
+                        InfoRow("VeloLauncher", BuildConfig.VERSION_NAME)
+                        InfoRow("Build", "#${BuildConfig.VERSION_CODE}")
+                        InfoRow("Package", BuildConfig.APPLICATION_ID)
                         InfoRow("Android", "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
                         InfoRow("Device", "${Build.MANUFACTURER} ${Build.MODEL}")
+
+                        Spacer(Modifier.height(16.dp))
+                        PaneTitle("Updates")
+
+                        when (updateStatus) {
+                            UpdateStatus.IDLE -> {
+                                OutlinedButton(
+                                    onClick = onCheckForUpdate,
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = NeonAccent),
+                                    modifier = Modifier.height(48.dp),
+                                ) {
+                                    Text("Check for Updates")
+                                }
+                            }
+                            UpdateStatus.CHECKING -> {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        color = NeonAccent,
+                                        strokeWidth = 2.dp,
+                                    )
+                                    Text("Checking for updates...", color = TextSecondary)
+                                }
+                            }
+                            UpdateStatus.UP_TO_DATE -> {
+                                Text("You're up to date.", color = TextSecondary)
+                                Spacer(Modifier.height(8.dp))
+                                OutlinedButton(
+                                    onClick = onCheckForUpdate,
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = TextMuted),
+                                    modifier = Modifier.height(40.dp),
+                                ) {
+                                    Text("Check Again")
+                                }
+                            }
+                            UpdateStatus.AVAILABLE -> {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(NeonAccent.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
+                                        .padding(16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Text(
+                                        "Update available: v$updateLatestVersion",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = NeonAccent,
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                    if (updateChangelog.isNotBlank()) {
+                                        Text(updateChangelog, color = TextSecondary, style = MaterialTheme.typography.bodySmall)
+                                    }
+                                    Button(
+                                        onClick = onDownloadUpdate,
+                                        colors = ButtonDefaults.buttonColors(containerColor = NeonAccent),
+                                        modifier = Modifier.height(48.dp),
+                                    ) {
+                                        Text("Download Update", color = DarkBackground, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                            UpdateStatus.DOWNLOADING -> {
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Text("Downloading v$updateLatestVersion...", color = TextSecondary)
+                                    LinearProgressIndicator(
+                                        progress = { updateDownloadProgress },
+                                        modifier = Modifier.fillMaxWidth().height(8.dp),
+                                        color = NeonAccent,
+                                        trackColor = SurfaceBorder,
+                                    )
+                                    Text(
+                                        "${(updateDownloadProgress * 100).toInt()}%",
+                                        color = TextMuted,
+                                        style = MaterialTheme.typography.bodySmall,
+                                    )
+                                }
+                            }
+                            UpdateStatus.READY -> {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(StatusGreen.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                                        .padding(16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Text(
+                                        "Ready to install v$updateLatestVersion",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = StatusGreen,
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                    Button(
+                                        onClick = onInstallUpdate,
+                                        colors = ButtonDefaults.buttonColors(containerColor = StatusGreen),
+                                        modifier = Modifier.height(48.dp),
+                                    ) {
+                                        Text("Install Update", color = DarkBackground, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                            UpdateStatus.ERROR -> {
+                                Column(
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Text("Update check failed.", color = StatusRed)
+                                    OutlinedButton(
+                                        onClick = onCheckForUpdate,
+                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = NeonAccent),
+                                        modifier = Modifier.height(40.dp),
+                                    ) {
+                                        Text("Retry")
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

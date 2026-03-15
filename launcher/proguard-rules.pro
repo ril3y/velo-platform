@@ -5,4 +5,4 @@
 -keep class io.battlewithbytes.ucb.** { *; }
 
 # Keep AIDL interfaces (used by ucblib BikeServiceClient)
--keep class com.bowflex.serialbridge.** { *; }
+-keep class io.freewheel.bridge.** { *; }

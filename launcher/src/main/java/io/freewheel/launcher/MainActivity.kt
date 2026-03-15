@@ -13,6 +13,7 @@ import androidx.compose.runtime.*
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.freewheel.launcher.data.HomeTile
 import io.freewheel.launcher.ui.*
+import io.freewheel.launcher.update.UpdateStatus
 import io.freewheel.launcher.ui.theme.VeloLauncherTheme
 
 class MainActivity : ComponentActivity() {
@@ -169,6 +170,11 @@ fun LauncherApp(vm: LauncherViewModel) {
         }
 
         currentScreen == Screen.SETTINGS -> {
+            val updateStatusVal by vm.updateStatus.collectAsState()
+            val updateLatestVersion by vm.updateLatestVersion.collectAsState()
+            val updateChangelog by vm.updateChangelog.collectAsState()
+            val updateDownloadProgress by vm.updateDownloadProgress.collectAsState()
+
             SettingsScreen(
                 serviceStatus = serviceStatus,
                 onBack = { currentScreen = Screen.HOME },
@@ -199,6 +205,13 @@ fun LauncherApp(vm: LauncherViewModel) {
                 autoRestartOverlay = autoRestartOverlay,
                 onAutoRestartBridgeChange = { vm.setAutoRestartBridge(it) },
                 onAutoRestartOverlayChange = { vm.setAutoRestartOverlay(it) },
+                updateStatus = updateStatusVal,
+                updateLatestVersion = updateLatestVersion,
+                updateChangelog = updateChangelog,
+                updateDownloadProgress = updateDownloadProgress,
+                onCheckForUpdate = { vm.checkForUpdate() },
+                onDownloadUpdate = { vm.downloadUpdate() },
+                onInstallUpdate = { vm.installUpdate() },
             )
         }
 

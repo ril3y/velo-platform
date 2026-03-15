@@ -7,6 +7,7 @@ import android.content.UriMatcher
 import android.database.Cursor
 import android.database.MatrixCursor
 import android.net.Uri
+import io.freewheel.launcher.VeloLauncherApp
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -23,12 +24,16 @@ class VeloContentProvider : ContentProvider() {
         private const val PROFILE = 5
         private const val TARGET_POWER = 6
         private const val FITNESS_CONFIG = 7
+        private const val SESSION = 8
+        private const val SESSION_SENSOR = 9
 
         val URI_WORKOUTS: Uri = Uri.parse("content://$AUTHORITY/workouts")
         val URI_RIDES: Uri = Uri.parse("content://$AUTHORITY/rides")
         val URI_PROFILE: Uri = Uri.parse("content://$AUTHORITY/profile")
         val URI_TARGET_POWER: Uri = Uri.parse("content://$AUTHORITY/target_power")
         val URI_FITNESS_CONFIG: Uri = Uri.parse("content://$AUTHORITY/fitness_config")
+        val URI_SESSION: Uri = Uri.parse("content://$AUTHORITY/session")
+        val URI_SESSION_SENSOR: Uri = Uri.parse("content://$AUTHORITY/session/sensor")
 
         private val uriMatcher = UriMatcher(UriMatcher.NO_MATCH).apply {
             addURI(AUTHORITY, "workouts", WORKOUTS)
@@ -38,6 +43,8 @@ class VeloContentProvider : ContentProvider() {
             addURI(AUTHORITY, "profile", PROFILE)
             addURI(AUTHORITY, "target_power/#", TARGET_POWER)  // /target_power/{resistance}
             addURI(AUTHORITY, "fitness_config", FITNESS_CONFIG)
+            addURI(AUTHORITY, "session", SESSION)
+            addURI(AUTHORITY, "session/sensor", SESSION_SENSOR)
         }
     }
 
@@ -69,6 +76,8 @@ class VeloContentProvider : ContentProvider() {
                 queryTargetPower(resistance)
             }
             FITNESS_CONFIG -> queryFitnessConfig()
+            SESSION -> querySession()
+            SESSION_SENSOR -> querySessionSensor()
             else -> null
         }
     }
@@ -204,8 +213,96 @@ class VeloContentProvider : ContentProvider() {
         return (weightKg * 1.5f).toInt().coerceAtLeast(80)
     }
 
+    private fun querySession(): Cursor {
+        val cursor = MatrixCursor(arrayOf(
+            "active", "ownerPackage", "ownerLabel", "startTime", "elapsedSeconds",
+        ))
+        try {
+            val bridge = VeloLauncherApp.get(context!!).bridgeConnectionManager
+            val session = bridge.sessionState.value
+            cursor.addRow(arrayOf(
+                if (session.active) 1 else 0,
+                session.ownerPackage ?: "",
+                session.ownerLabel ?: "",
+                session.startTime,
+                session.elapsedSeconds,
+            ))
+        } catch (_: Exception) {
+            cursor.addRow(arrayOf(0, "", "", 0L, 0))
+        }
+        return cursor
+    }
+
+    private fun querySessionSensor(): Cursor {
+        val cursor = MatrixCursor(arrayOf(
+            "resistance", "rpm", "tilt", "power",
+            "crankRevCount", "crankEventTime", "heartRate", "hrmDeviceName",
+        ))
+        try {
+            val bridge = VeloLauncherApp.get(context!!).bridgeConnectionManager
+            val data = bridge.sensorData.value
+            val hr = bridge.heartRate.value
+            val hrmName = bridge.hrmDeviceName.value ?: ""
+            cursor.addRow(arrayOf(
+                data.resistanceLevel, data.rpm, data.tilt, data.power,
+                data.crankRevCount, data.crankEventTime, hr, hrmName,
+            ))
+        } catch (_: Exception) {
+            cursor.addRow(arrayOf(0, 0, 0, 0f, 0L, 0, 0, ""))
+        }
+        return cursor
+    }
+
     override fun insert(uri: Uri, values: ContentValues?): Uri? {
-        if (uriMatcher.match(uri) != RIDES || values == null) return null
+        if (values == null) return null
+
+        return when (uriMatcher.match(uri)) {
+            RIDES -> insertRide(values)
+            WORKOUTS -> insertWorkout(values)
+            else -> null
+        }
+    }
+
+    private fun insertWorkout(values: ContentValues): Uri? {
+        val entity = WorkoutEntity(
+            id = values.getAsString("id") ?: java.util.UUID.randomUUID().toString(),
+            name = values.getAsString("name") ?: "Imported Workout",
+            description = values.getAsString("description") ?: "",
+            durationMinutes = values.getAsInteger("durationMinutes") ?: 0,
+            type = values.getAsString("type") ?: "custom",
+            category = values.getAsString("category") ?: "Imported",
+            coach = values.getAsString("coach") ?: "",
+            optionalMedia = (values.getAsInteger("optionalMedia") ?: 0) != 0,
+            color = values.getAsString("color") ?: "#22D3EE",
+            segmentsJson = values.getAsString("segmentsJson") ?: "[]",
+            source = values.getAsString("source") ?: "external",
+            sourceLabel = values.getAsString("sourceLabel") ?: "External App",
+        )
+
+        // Insert synchronously via raw SQL (ContentProvider handles threading)
+        val sqlDb = db.openHelper.writableDatabase
+        val cv = android.content.ContentValues().apply {
+            put("id", entity.id)
+            put("name", entity.name)
+            put("description", entity.description)
+            put("durationMinutes", entity.durationMinutes)
+            put("type", entity.type)
+            put("category", entity.category)
+            put("coach", entity.coach)
+            put("optionalMedia", if (entity.optionalMedia) 1 else 0)
+            put("color", entity.color)
+            put("segmentsJson", entity.segmentsJson)
+            put("source", entity.source)
+            put("sourceLabel", entity.sourceLabel)
+            put("createdAt", entity.createdAt)
+        }
+        sqlDb.insert("workouts", 0, cv)
+
+        context?.contentResolver?.notifyChange(URI_WORKOUTS, null)
+        return Uri.withAppendedPath(URI_WORKOUTS, entity.id)
+    }
+
+    private fun insertRide(values: ContentValues): Uri? {
 
         val ride = RideRecord(
             startTime = values.getAsLong("startTime") ?: System.currentTimeMillis(),
@@ -245,7 +342,7 @@ class VeloContentProvider : ContentProvider() {
             sqlDb.insert("rides", 0, cv)
         }
 
-        context?.contentResolver?.notifyChange(uri, null)
+        context?.contentResolver?.notifyChange(URI_RIDES, null)
         return ContentUris.withAppendedId(URI_RIDES, id)
     }
 
@@ -259,6 +356,8 @@ class VeloContentProvider : ContentProvider() {
         PROFILE -> "vnd.android.cursor.item/vnd.$AUTHORITY.profile"
         TARGET_POWER -> "vnd.android.cursor.item/vnd.$AUTHORITY.target_power"
         FITNESS_CONFIG -> "vnd.android.cursor.item/vnd.$AUTHORITY.fitness_config"
+        SESSION -> "vnd.android.cursor.item/vnd.$AUTHORITY.session"
+        SESSION_SENSOR -> "vnd.android.cursor.item/vnd.$AUTHORITY.session_sensor"
         else -> null
     }
 }

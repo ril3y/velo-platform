@@ -9,6 +9,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import io.freewheel.launcher.apps.AppRepository
 import io.freewheel.launcher.apps.TaskRepository
+import io.freewheel.launcher.bridge.BridgeConnectionManager
 import io.freewheel.launcher.data.HomeTile
 import io.freewheel.launcher.data.MediaApp
 import io.freewheel.launcher.data.MediaApps
@@ -20,8 +21,11 @@ import io.freewheel.launcher.ride.RideRepository
 import io.freewheel.launcher.ride.RideSessionManager
 import io.freewheel.launcher.service.ServiceMonitor
 import io.freewheel.launcher.service.ServiceStatus
+import io.freewheel.launcher.session.SessionState
+import io.freewheel.launcher.session.WorkoutAppRegistry
 import io.freewheel.launcher.system.ScreenSaverManager
 import io.freewheel.launcher.system.SystemMonitor
+import io.freewheel.launcher.update.UpdateManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -33,6 +37,10 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     private val prefs = application.getSharedPreferences("velolauncher", Context.MODE_PRIVATE)
 
+    // --- Bridge connection (application-scoped singleton) ---
+    private val bridgeConnectionManager: BridgeConnectionManager =
+        VeloLauncherApp.get(application).bridgeConnectionManager
+
     // --- Repositories & managers ---
     private val rideRepository = RideRepository(application)
     private val workoutRepository = WorkoutRepository(application)
@@ -40,11 +48,13 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     private val taskRepository = TaskRepository(application)
     private val serviceMonitor = ServiceMonitor(application)
     private val systemMonitor = SystemMonitor(application, viewModelScope)
-    private val rideSessionManager = RideSessionManager(application, viewModelScope, rideRepository)
-    private val screenSaverManager = ScreenSaverManager(prefs, viewModelScope) {
+    private val rideSessionManager = RideSessionManager(bridgeConnectionManager, viewModelScope, rideRepository)
+    private val screenSaverManager = ScreenSaverManager(prefs, viewModelScope, application.contentResolver) {
         rideSessionManager.rideActive.value
     }
     private val userProfileDao = RideDatabase.getInstance(application).userProfileDao()
+    private val workoutAppRegistry = WorkoutAppRegistry(application)
+    private val updateManager = UpdateManager(application, viewModelScope)
 
     // --- Exposed state: Service status ---
     private val _serviceStatus = MutableStateFlow(ServiceStatus())
@@ -54,6 +64,9 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     val allApps get() = appRepository.allApps
     val fitnessApps get() = appRepository.fitnessApps
     val recentApps get() = appRepository.recentApps
+
+    // --- Exposed state: Workout apps ---
+    val workoutApps get() = workoutAppRegistry.apps
 
     // --- Exposed state: Ride history ---
     val recentRides: StateFlow<List<io.freewheel.launcher.data.RideRecord>> =
@@ -75,6 +88,22 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     val rideDistanceMiles get() = rideSessionManager.rideDistanceMiles
     val rideHeartRate get() = rideSessionManager.rideHeartRate
     val rideConnected get() = rideSessionManager.rideConnected
+
+    // --- Exposed state: Bridge (for diagnostics, calibration, OTA) ---
+    val bridgeConnected get() = bridgeConnectionManager.connected
+    val bridgeSensorData get() = bridgeConnectionManager.sensorData
+    val bridgeFirmwareState get() = bridgeConnectionManager.firmwareState
+    val bridgeFirmwareStateName get() = bridgeConnectionManager.firmwareStateName
+    val bridgeHeartRate get() = bridgeConnectionManager.heartRate
+    val bridgeHrmDeviceName get() = bridgeConnectionManager.hrmDeviceName
+    val bridgeWorkoutActive get() = bridgeConnectionManager.workoutActive
+    val bridgeRawFrames get() = bridgeConnectionManager.rawFrames
+    val bridgeRawMonitorEnabled get() = bridgeConnectionManager.rawMonitorEnabled
+    val bridgeOtaProgress get() = bridgeConnectionManager.otaProgress
+    val bridgeOtaComplete get() = bridgeConnectionManager.otaComplete
+    val bridgeCalibrationProgress get() = bridgeConnectionManager.calibrationProgress
+    val bridgeCalibrationComplete get() = bridgeConnectionManager.calibrationComplete
+    val sessionState get() = bridgeConnectionManager.sessionState
 
     // --- Exposed state: Screen saver (delegated) ---
     val screenDimmed get() = screenSaverManager.screenDimmed
@@ -99,6 +128,12 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     val ramUsed get() = systemMonitor.ramUsed
     val ramTotal get() = systemMonitor.ramTotal
 
+    // --- Exposed state: Update ---
+    val updateStatus get() = updateManager.status
+    val updateLatestVersion get() = updateManager.latestVersion
+    val updateChangelog get() = updateManager.changelog
+    val updateDownloadProgress get() = updateManager.downloadProgress
+
     // --- Exposed state: User profile ---
     private val _setupComplete = MutableStateFlow<Boolean?>(null) // null = loading
     val setupComplete: StateFlow<Boolean?> = _setupComplete.asStateFlow()
@@ -122,6 +157,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         systemMonitor.start()
         screenSaverManager.start()
         checkSetupComplete()
+        workoutAppRegistry.start()
     }
 
     // --- App operations ---
@@ -153,30 +189,29 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     // --- Ride operations ---
 
     fun startRide() {
-        launchFreeRideApp(freeRide = true)
+        // Launch FreeRide app directly — it handles its own bridge connection
+        val intent = Intent("io.freewheel.freeride.ACTION_START_RIDE").apply {
+            putExtra("free_ride", true)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        try {
+            getApplication<Application>().startActivity(intent)
+        } catch (_: Exception) {
+            // FreeRide not installed — fall back to internal session
+            rideSessionManager.startRide()
+        }
     }
 
     fun stopRide() = rideSessionManager.stopRide()
 
-    private fun launchFreeRideApp(
-        freeRide: Boolean = false,
-        workout: io.freewheel.launcher.data.Workout? = null,
-        mediaPackage: String? = null,
-    ) {
-        val app = getApplication<Application>()
-        val intent = Intent("io.freewheel.freeride.ACTION_START_RIDE").apply {
-            setPackage("io.freewheel.freeride")
-            putExtra("free_ride", freeRide)
-            if (workout != null) {
-                putExtra("workout_json", workout.toJson())
-            }
-            if (mediaPackage != null) {
-                putExtra("media_package", mediaPackage)
-            }
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        app.startActivity(intent)
-    }
+    // --- Bridge pass-through for diagnostics/calibration/OTA ---
+
+    fun startCalibration(calibrationType: Int) = bridgeConnectionManager.startCalibration(calibrationType)
+    fun cancelCalibration() = bridgeConnectionManager.cancelCalibration()
+    fun confirmCalibrationStep() = bridgeConnectionManager.confirmCalibrationStep()
+    fun setRawFrameMonitoring(enabled: Boolean) = bridgeConnectionManager.setRawFrameMonitoring(enabled)
+    fun sendRawCommand(frame: ByteArray) = bridgeConnectionManager.sendRawCommand(frame)
+    fun getBridgeService() = bridgeConnectionManager.getService()
 
     // --- Task manager operations ---
 
@@ -254,16 +289,14 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     fun startWorkoutRide() {
         val workout = _selectedWorkout.value ?: return
-        val media = _selectedMedia.value
-        launchFreeRideApp(
-            freeRide = false,
-            workout = workout,
-            mediaPackage = media?.packageName,
-        )
+        _workoutRideActive.value = true
+        // Start the ride through the bridge (launcher is the owner)
+        rideSessionManager.startRide()
     }
 
     fun stopWorkoutRide() {
         _workoutRideActive.value = false
+        rideSessionManager.stopRide()
     }
 
     fun clearWorkoutSelection() {
@@ -302,6 +335,12 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    // --- Update operations ---
+
+    fun checkForUpdate() = updateManager.checkForUpdate()
+    fun downloadUpdate() = updateManager.downloadUpdate()
+    fun installUpdate() = updateManager.installUpdate()
+
     // --- Ride history ---
 
     fun exportRidesCsv(): String = rideRepository.exportCsv(allRides.value)
@@ -322,5 +361,6 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         super.onCleared()
         rideSessionManager.destroy()
         screenSaverManager.destroy()
+        workoutAppRegistry.stop()
     }
 }

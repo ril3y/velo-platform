@@ -12,10 +12,10 @@ class BootReceiver : BroadcastReceiver() {
             }
             context.startActivity(launchIntent)
 
-            // Start SerialBridge
+            // Start SerialBridge (our own serial-to-TCP bridge, not Bowflex code)
             try {
                 val bridgeIntent = Intent().apply {
-                    setClassName("com.bowflex.serialbridge", "com.bowflex.serialbridge.SerialBridgeService")
+                    setClassName("io.freewheel.bridge", "io.freewheel.bridge.BridgeService")
                 }
                 context.startForegroundService(bridgeIntent)
             } catch (e: Exception) {

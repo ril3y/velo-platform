@@ -14,7 +14,7 @@ import io.freewheel.bridge.IBikeService;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
- * Client wrapper for the SerialBridge AIDL service.
+ * Client wrapper for the FreewheelBridge AIDL service.
  * Handles binding, auto-heartbeat, reconnection, and death detection.
  *
  * Usage:
@@ -53,6 +53,11 @@ public class BikeServiceClient {
         void onHeartRate(int bpm, String deviceName);
         void onServiceConnected();
         void onServiceDisconnected();
+        void onOtaProgress(int phase, int blockCurrent, int blockTotal);
+        void onOtaComplete(boolean success, String error);
+        void onCalibrationProgress(int step, String instruction);
+        void onCalibrationComplete(boolean success);
+        void onRawFrame(byte[] frame, boolean isOutgoing);
     }
 
     public static class ListenerAdapter implements Listener {
@@ -63,6 +68,11 @@ public class BikeServiceClient {
         @Override public void onHeartRate(int bpm, String deviceName) {}
         @Override public void onServiceConnected() {}
         @Override public void onServiceDisconnected() {}
+        @Override public void onOtaProgress(int phase, int blockCurrent, int blockTotal) {}
+        @Override public void onOtaComplete(boolean success, String error) {}
+        @Override public void onCalibrationProgress(int step, String instruction) {}
+        @Override public void onCalibrationComplete(boolean success) {}
+        @Override public void onRawFrame(byte[] frame, boolean isOutgoing) {}
     }
 
     public BikeServiceClient(Context context) {
@@ -75,13 +85,12 @@ public class BikeServiceClient {
     public boolean isBound() { return bound && service != null; }
     public boolean isWorkoutActive() { return workoutActive; }
 
-    // --- AIDL listener that receives callbacks from SerialBridge ---
+    // --- AIDL listener that receives callbacks from FreewheelBridge ---
 
     private final IBikeListener.Stub bikeListener = new IBikeListener.Stub() {
         @Override
         public void onSensorData(int resistance, int rpm, int tilt, float power,
                                  long crankRevCount, int crankEventTime) {
-            Log.d(TAG, "onSensorData: res=" + resistance + " rpm=" + rpm + " power=" + power);
             SensorData data = new SensorData();
             data.resistanceLevel = resistance;
             data.rpm = rpm;
@@ -131,6 +140,46 @@ public class BikeServiceClient {
                 catch (Exception e) { Log.w(TAG, "Listener error", e); }
             }
         }
+
+        @Override
+        public void onOtaProgress(int phase, int blockCurrent, int blockTotal) {
+            for (Listener l : listeners) {
+                try { l.onOtaProgress(phase, blockCurrent, blockTotal); }
+                catch (Exception e) { Log.w(TAG, "Listener error", e); }
+            }
+        }
+
+        @Override
+        public void onOtaComplete(boolean success, String error) {
+            for (Listener l : listeners) {
+                try { l.onOtaComplete(success, error); }
+                catch (Exception e) { Log.w(TAG, "Listener error", e); }
+            }
+        }
+
+        @Override
+        public void onCalibrationProgress(int step, String instruction) {
+            for (Listener l : listeners) {
+                try { l.onCalibrationProgress(step, instruction); }
+                catch (Exception e) { Log.w(TAG, "Listener error", e); }
+            }
+        }
+
+        @Override
+        public void onCalibrationComplete(boolean success) {
+            for (Listener l : listeners) {
+                try { l.onCalibrationComplete(success); }
+                catch (Exception e) { Log.w(TAG, "Listener error", e); }
+            }
+        }
+
+        @Override
+        public void onRawFrame(byte[] frame, boolean isOutgoing) {
+            for (Listener l : listeners) {
+                try { l.onRawFrame(frame, isOutgoing); }
+                catch (Exception e) { Log.w(TAG, "Listener error", e); }
+            }
+        }
     };
 
     // --- Service connection ---
@@ -140,11 +189,10 @@ public class BikeServiceClient {
         public void onServiceConnected(ComponentName name, IBinder binder) {
             service = IBikeService.Stub.asInterface(binder);
             bound = true;
-            Log.d(TAG, "Connected to SerialBridge service");
+            Log.d(TAG, "Connected to FreewheelBridge service");
 
             try {
                 service.registerListener(bikeListener);
-                Log.d(TAG, "Registered listener OK");
                 boolean claimed = service.claimSession(clientPackage);
                 Log.d(TAG, "claimSession(" + clientPackage + ") = " + claimed);
             } catch (RemoteException e) {
@@ -159,7 +207,7 @@ public class BikeServiceClient {
 
         @Override
         public void onServiceDisconnected(ComponentName name) {
-            Log.w(TAG, "SerialBridge service disconnected");
+            Log.w(TAG, "FreewheelBridge service disconnected");
             service = null;
             bound = false;
             workoutActive = false;
@@ -187,13 +235,13 @@ public class BikeServiceClient {
 
     // --- Public API ---
 
-    /** Bind to SerialBridge service. */
+    /** Bind to FreewheelBridge service. */
     public void bind() {
         shouldBind = true;
         doBind();
     }
 
-    /** Unbind from SerialBridge service. */
+    /** Unbind from FreewheelBridge service. */
     public void unbind() {
         shouldBind = false;
         stopHeartbeat();
@@ -224,9 +272,7 @@ public class BikeServiceClient {
             return false;
         }
         try {
-            Log.d(TAG, "Calling service.startWorkout()...");
             boolean ok = service.startWorkout();
-            Log.d(TAG, "service.startWorkout() returned " + ok);
             if (ok) {
                 workoutActive = true;
                 startHeartbeat();
@@ -293,6 +339,61 @@ public class BikeServiceClient {
         }
     }
 
+    /** Start resistance calibration. */
+    public void startCalibration(int calibrationType) {
+        if (service == null) return;
+        try {
+            service.startCalibration(calibrationType);
+        } catch (RemoteException e) {
+            Log.e(TAG, "Failed to start calibration", e);
+        }
+    }
+
+    /** Cancel resistance calibration. */
+    public void cancelCalibration() {
+        if (service == null) return;
+        try {
+            service.cancelCalibration();
+        } catch (RemoteException e) {
+            Log.e(TAG, "Failed to cancel calibration", e);
+        }
+    }
+
+    /** Confirm current calibration step. */
+    public void confirmCalibrationStep() {
+        if (service == null) return;
+        try {
+            service.confirmCalibrationStep();
+        } catch (RemoteException e) {
+            Log.e(TAG, "Failed to confirm calibration step", e);
+        }
+    }
+
+    /** Enable/disable raw UCB frame monitoring. */
+    public void setRawFrameMonitoring(boolean enabled) {
+        if (service == null) return;
+        try {
+            service.setRawFrameMonitoring(enabled);
+        } catch (RemoteException e) {
+            Log.e(TAG, "Failed to set raw frame monitoring", e);
+        }
+    }
+
+    /** Send a raw UCB command frame. */
+    public void sendRawCommand(byte[] frame) {
+        if (service == null) return;
+        try {
+            service.sendRawCommand(frame);
+        } catch (RemoteException e) {
+            Log.e(TAG, "Failed to send raw command", e);
+        }
+    }
+
+    /** Get the raw AIDL service interface for advanced operations (OTA, etc). */
+    public IBikeService getService() {
+        return service;
+    }
+
     // --- Heartbeat ---
 
     private Runnable heartbeatRunnable;
@@ -330,10 +431,10 @@ public class BikeServiceClient {
         try {
             boolean ok = context.bindService(intent, connection, Context.BIND_AUTO_CREATE);
             if (!ok) {
-                Log.w(TAG, "bindService returned false — SerialBridge may not be installed");
+                Log.w(TAG, "bindService returned false — FreewheelBridge may not be installed");
             }
         } catch (Exception e) {
-            Log.e(TAG, "Failed to bind to SerialBridge", e);
+            Log.e(TAG, "Failed to bind to FreewheelBridge", e);
         }
     }
 }

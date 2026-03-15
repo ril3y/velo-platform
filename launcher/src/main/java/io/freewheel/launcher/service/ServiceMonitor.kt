@@ -15,8 +15,8 @@ data class ServiceStatus(
 class ServiceMonitor(private val context: Context) {
 
     companion object {
-        private const val SERIAL_BRIDGE_PKG = "com.bowflex.serialbridge"
-        private const val SERIAL_BRIDGE_SERVICE = "com.bowflex.serialbridge.SerialBridgeService"
+        private const val SERIAL_BRIDGE_PKG = "io.freewheel.bridge"
+        private const val SERIAL_BRIDGE_SERVICE = "io.freewheel.bridge.BridgeService"
         private const val OVERLAY_PKG = "com.bowflex.jailbreak"
         private const val OVERLAY_SERVICE = "com.bowflex.jailbreak.OverlayService"
         private const val POLL_INTERVAL_MS = 10_000L

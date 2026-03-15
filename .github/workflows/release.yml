@@ -1,0 +1,159 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Release
+    runs-on: ubuntu-latest
+
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('**/*.gradle.kts', '**/gradle-wrapper.properties') }}
+          restore-keys: gradle-
+
+      - name: Build all Android modules (release)
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Platform-sign FreewheelBridge
+        env:
+          PLATFORM_PK8_B64: ${{ secrets.PLATFORM_PK8_B64 }}
+          PLATFORM_CERT_B64: ${{ secrets.PLATFORM_CERT_B64 }}
+        run: |
+          if [ -z "$PLATFORM_PK8_B64" ] || [ -z "$PLATFORM_CERT_B64" ]; then
+            echo "::error::Platform signing keys required for release builds"
+            exit 1
+          fi
+
+          echo "$PLATFORM_PK8_B64" | base64 -d > /tmp/platform.pk8
+          echo "$PLATFORM_CERT_B64" | base64 -d > /tmp/device_platform.x509.pem
+
+          BUILD_TOOLS="${ANDROID_HOME}/build-tools/34.0.0"
+
+          APK_IN="freewheelbridge/build/outputs/apk/release/freewheelbridge-release-unsigned.apk"
+          APK_ALIGNED="freewheelbridge/build/outputs/apk/freewheelbridge-aligned.apk"
+          APK_OUT="freewheelbridge/build/outputs/apk/freewheelbridge.apk"
+
+          "${BUILD_TOOLS}/zipalign" -f 4 "$APK_IN" "$APK_ALIGNED"
+          "${BUILD_TOOLS}/apksigner" sign \
+            --key /tmp/platform.pk8 \
+            --cert /tmp/device_platform.x509.pem \
+            --out "$APK_OUT" \
+            "$APK_ALIGNED"
+          rm -f "$APK_ALIGNED"
+
+          "${BUILD_TOOLS}/apksigner" verify --print-certs "$APK_OUT"
+
+          rm -f /tmp/platform.pk8 /tmp/device_platform.x509.pem
+
+      - name: Build standalone JARs
+        run: ./gradlew :ucblib:buildClassesJar :velofit:buildClassesJar --no-daemon
+
+      - name: Collect release artifacts
+        run: |
+          mkdir -p release
+          cp launcher/build/outputs/apk/release/launcher-release.apk release/velolauncher.apk
+          cp freeride/build/outputs/apk/release/freeride-release.apk release/freeride.apk
+          cp freewheelbridge/build/outputs/apk/freewheelbridge.apk release/serialbridge.apk
+          cp ucblib/build/libs/ucblib.jar release/
+          cp velofit/build/libs/velofit.jar release/
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts
+          path: release/
+
+  jailbreak:
+    name: Build FreeWheel (Windows)
+    runs-on: windows-latest
+    needs: build
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: freewheel-jailbreak/go.mod
+          cache-dependency-path: freewheel-jailbreak/go.sum
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts
+          path: release
+
+      - name: Embed APKs and build
+        shell: bash
+        run: |
+          cd freewheel-jailbreak/assets
+          cp ../../release/velolauncher.apk velolauncher.apk
+          cp ../../release/freeride.apk freeride.apk
+          cp ../../release/serialbridge.apk serialbridge.apk
+
+          cd ..
+          go build -ldflags "-H windowsgui" -o freewheel.exe ./cmd/freewheel
+          ls -lh freewheel.exe
+
+      - name: Upload FreeWheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: freewheel-exe
+          path: freewheel-jailbreak/freewheel.exe
+
+  publish:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [build, jailbreak]
+
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts
+          path: release
+
+      - name: Download FreeWheel
+        uses: actions/download-artifact@v4
+        with:
+          name: freewheel-exe
+          path: release
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            release/velolauncher.apk
+            release/freeride.apk
+            release/serialbridge.apk
+            release/freewheel.exe
+            release/ucblib.jar
+            release/velofit.jar
