@@ -1,5 +1,8 @@
 # FreeWheel Jailbreak (freewheel-jailbreak)
 
+> **Status: Under active development — not ready for public use.**
+> The `freewheel.exe` binary is not included in releases yet. If you're interested in testing, reach out first.
+
 Windows desktop application that jailbreaks Bowflex Velocore fitness bikes. One-click network discovery, pre-flight validation, 11-step automated jailbreak, and full stock restoration — no command-line tools or Android SDK required.
 
 ## What it does
@@ -43,17 +46,13 @@ freewheel-jailbreak/
 │   │   ├── jailbreak.go          — Jailbreak sequence with auto-restore
 │   │   ├── restore.go            — Stock restoration sequence
 │   │   └── types.go              — Logger interface
+│   ├── update/
+│   │   └── update.go             — GitHub Releases API, APK caching, self-update
 │   └── adb/
 │       └── adb.go                — Native ADB wire protocol (no external tools)
-├── assets/
-│   ├── embed.go                  — Go embed for APK bundling
-│   ├── serialbridge.apk          — FreewheelBridge (platform-signed)
-│   ├── velolauncher.apk          — VeloLauncher
-│   ├── freeride.apk              — FreeRide
-│   ├── bikearcade.apk            — BikeArcade
-│   └── jailbreak.apk             — Overlay utility
-└── build/
-    └── build.bat                 — Master build script
+└── assets/
+    ├── embed.go                  — Logo embed + APK lookup (cache/local overrides)
+    └── logo.png                  — Application icon
 ```
 
 ## Native ADB Implementation
@@ -68,6 +67,10 @@ FreeWheel implements the ADB wire protocol directly — no `adb.exe` or Android 
 | `Install(apk)` | Push APK + `pm install -r` |
 | `IsADBPort(ip)` | Lightweight port probe for scanning |
 
+## APK Management
+
+APKs are downloaded at runtime from GitHub Releases and cached locally in `%APPDATA%/freewheel/apks/`. On startup, FreeWheel checks for the latest release and downloads any new or updated APKs. Local file overrides are also supported for development.
+
 ## Pre-flight Checks
 
 Before jailbreaking, validates:
@@ -78,30 +81,17 @@ Before jailbreaking, validates:
 - Platform signing key SHA-1 matches expected value
 - Warns if JRNY version differs from tested v2.25.1
 
-## APK Embedding
-
-All APKs are embedded into the binary at compile time via Go's `//go:embed` directive (~160 MB total). The tool also checks filesystem paths for overrides, allowing dev/test without rebuild.
-
 ## Building
 
-Requires Go 1.25+, MSYS64/MinGW64 (for CGO/Fyne), and optionally Gradle (to rebuild Android APKs).
+Requires Go 1.25+, MSYS64/MinGW64 (for CGO/Fyne), and optionally `go-winres` for Windows icon embedding.
 
 ```bash
-# Build just the Go binary (uses pre-embedded APKs):
+# Build:
 cd freewheel-jailbreak
-go build -ldflags "-H windowsgui" -o freewheel.exe ./cmd/freewheel
-
-# Full build (rebuilds Android APKs + Go binary):
-build/build.bat
+go build -ldflags "-H windowsgui -X main.version=dev -X main.gitHash=$(git rev-parse --short=8 HEAD)" -o freewheel.exe ./cmd/freewheel
 ```
 
-### build.bat workflow
-
-1. Builds `freewheelbridge` (Gradle + platform sign)
-2. Builds `launcher` (Gradle)
-3. Builds `freeride` (Gradle, if present)
-4. Copies APKs to `assets/`
-5. Builds `freewheel.exe` with embedded APKs
+CI builds are handled by GitHub Actions — the release workflow builds APKs and the Windows binary in parallel, then publishes a GitHub Release with all artifacts.
 
 ## System Settings Applied
 
