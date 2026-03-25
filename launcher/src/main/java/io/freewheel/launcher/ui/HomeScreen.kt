@@ -3,6 +3,7 @@ package io.freewheel.launcher.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -792,34 +793,46 @@ private fun AppColumn(
                 )
             }
         } else {
-            Column(
+            // iOS-style square icon grid with labels below
+            Row(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.Top,
             ) {
                 for (app in apps.take(4)) {
-                    Row(
+                    Column(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(Color.White.copy(alpha = 0.04f), RoundedCornerShape(12.dp))
+                            .weight(1f)
+                            .clip(RoundedCornerShape(16.dp))
                             .clickable { onAppClick(app.packageName) }
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+                            .padding(vertical = 4.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        if (app.icon != null) {
-                            Image(
-                                bitmap = app.icon.toBitmap(96, 96).asImageBitmap(),
-                                contentDescription = app.label,
-                                modifier = Modifier.size(36.dp).clip(RoundedCornerShape(8.dp)),
-                            )
-                            Spacer(Modifier.width(10.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(64.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(Color.White.copy(alpha = 0.06f)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (app.icon != null) {
+                                Image(
+                                    bitmap = app.icon.toBitmap(128, 128).asImageBitmap(),
+                                    contentDescription = app.label,
+                                    modifier = Modifier.size(48.dp).clip(RoundedCornerShape(10.dp)),
+                                )
+                            }
                         }
+                        Spacer(Modifier.height(6.dp))
                         Text(
                             text = app.label,
-                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                            color = Color.White.copy(alpha = 0.90f),
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.Medium,
+                                fontSize = 11.sp,
+                            ),
+                            color = Color.White.copy(alpha = 0.80f),
                             maxLines = 1,
+                            textAlign = TextAlign.Center,
                         )
                     }
                 }
