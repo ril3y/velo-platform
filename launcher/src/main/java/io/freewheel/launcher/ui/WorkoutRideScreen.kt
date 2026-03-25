@@ -150,72 +150,137 @@ fun WorkoutRideScreen(
         }
 
         if (segments.isEmpty()) {
-            // ── Free ride mode: large stats filling the screen ──
-            Column(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .fillMaxWidth()
-                    .padding(horizontal = 48.dp, vertical = 80.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(24.dp),
-            ) {
-                // Primary row: Power | Timer | Cadence
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    FreeRidePrimaryMetric(power, "W", "POWER", PowerGreen)
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = formatDuration(elapsedSeconds),
-                            style = MaterialTheme.typography.displayLarge.copy(
-                                fontSize = 80.sp, lineHeight = 84.sp,
-                                fontWeight = FontWeight.Bold, letterSpacing = 2.sp,
-                                fontFamily = FontFamily.Monospace,
-                            ),
-                            color = TextPrimary,
-                        )
-                        Text("ELAPSED", style = MaterialTheme.typography.labelMedium.copy(fontSize = 14.sp), color = TextSecondary)
-                    }
-                    FreeRidePrimaryMetric(rpm, "RPM", "CADENCE", CadenceBlue)
-                }
+            // ── Free ride mode: full-screen immersive stats ──
 
-                // Secondary metrics bar
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .glassPanel()
-                        .padding(vertical = 16.dp, horizontal = 28.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    FreeRideSecondaryMetric("$calories", "CAL", SpeedOrange)
-                    FreeRideMetricDivider()
-                    FreeRideSecondaryMetric("%.1f".format(speedMph), "MPH", SpeedOrange)
-                    FreeRideMetricDivider()
-                    FreeRideSecondaryMetric("%.1f".format(distanceMiles), "MI", CyanLabel)
-                    FreeRideMetricDivider()
-                    FreeRideSecondaryMetric("LVL $resistance", "RES", ResistanceYellow)
-                    FreeRideMetricDivider()
-                    FreeRideSecondaryMetric(
-                        if (heartRate > 0) "$heartRate" else "--", "BPM",
-                        if (heartRate > 0) HeartRateRed else TextSecondary,
+            // Top bar: workout name + elapsed + connection
+            Row(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .padding(start = 32.dp, end = 32.dp, top = 16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    workout.name,
+                    style = MaterialTheme.typography.titleMedium.copy(letterSpacing = 2.sp),
+                    color = TextSecondary,
+                )
+                Text(
+                    formatDuration(elapsedSeconds),
+                    style = MaterialTheme.typography.headlineLarge.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 36.sp,
+                    ),
+                    color = TextPrimary,
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier.size(10.dp).background(
+                            if (isConnected) StatusGreen else StatusRed,
+                            CircleShape,
+                        )
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        if (isConnected) "Connected" else "Connecting",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (isConnected) StatusGreen else StatusRed,
                     )
                 }
             }
 
-            // End Ride button at bottom
-            Button(
-                onClick = onEndRide,
-                colors = ButtonDefaults.buttonColors(containerColor = RoseButton, contentColor = Color.White),
-                shape = RoundedCornerShape(26.dp),
-                contentPadding = PaddingValues(horizontal = 36.dp, vertical = 14.dp),
+            // Center: massive power display
+            Column(
+                modifier = Modifier.align(Alignment.Center),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    "$power",
+                    style = MaterialTheme.typography.displayLarge.copy(
+                        fontSize = 160.sp,
+                        lineHeight = 160.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
+                    ),
+                    color = PowerGreen,
+                )
+                Text(
+                    "WATTS",
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        letterSpacing = 8.sp,
+                        fontSize = 20.sp,
+                    ),
+                    color = PowerGreen.copy(alpha = 0.6f),
+                )
+            }
+
+            // Flanking: RPM left, Heart right
+            Column(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .padding(start = 48.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    "$rpm",
+                    style = MaterialTheme.typography.displayMedium.copy(
+                        fontSize = 72.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
+                    ),
+                    color = CadenceBlue,
+                )
+                Text("RPM", style = MaterialTheme.typography.titleMedium.copy(letterSpacing = 4.sp), color = CadenceBlue.copy(alpha = 0.6f))
+            }
+
+            Column(
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(end = 48.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    if (heartRate > 0) "$heartRate" else "--",
+                    style = MaterialTheme.typography.displayMedium.copy(
+                        fontSize = 72.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
+                    ),
+                    color = if (heartRate > 0) HeartRateRed else TextMuted,
+                )
+                Text("BPM", style = MaterialTheme.typography.titleMedium.copy(letterSpacing = 4.sp), color = HeartRateRed.copy(alpha = 0.6f))
+            }
+
+            // Bottom bar: secondary metrics + end ride
+            Row(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = 28.dp),
+                    .fillMaxWidth()
+                    .padding(start = 32.dp, end = 32.dp, bottom = 24.dp)
+                    .glassPanel()
+                    .padding(vertical = 14.dp, horizontal = 24.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("End Ride", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold, letterSpacing = 1.sp))
+                FreeRideSecondaryMetric("$calories", "CAL", SpeedOrange)
+                FreeRideMetricDivider()
+                FreeRideSecondaryMetric("%.1f".format(speedMph), "MPH", SpeedOrange)
+                FreeRideMetricDivider()
+                FreeRideSecondaryMetric("%.1f".format(distanceMiles), "MI", CyanLabel)
+                FreeRideMetricDivider()
+                FreeRideSecondaryMetric("LVL $resistance", "RES", ResistanceYellow)
+                FreeRideMetricDivider()
+
+                Button(
+                    onClick = onEndRide,
+                    colors = ButtonDefaults.buttonColors(containerColor = RoseButton, contentColor = Color.White),
+                    shape = RoundedCornerShape(20.dp),
+                    contentPadding = PaddingValues(horizontal = 32.dp, vertical = 12.dp),
+                ) {
+                    Text("End Ride", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold, letterSpacing = 1.sp))
+                }
             }
         } else {
             // ── Structured workout mode: segments, hill chart, difficulty ──
@@ -225,7 +290,7 @@ fun WorkoutRideScreen(
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .padding(start = 24.dp, top = 80.dp)
-                    .width(320.dp),
+                    .width(400.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 // Stat grid
@@ -413,12 +478,12 @@ private fun StatTile(label: String, value: String, unit: String, color: Color, m
         modifier = modifier
             .background(Color.White.copy(alpha = 0.04f), RoundedCornerShape(18.dp))
             .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(18.dp))
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .padding(horizontal = 16.dp, vertical = 14.dp),
     ) {
-        Text(label, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium, letterSpacing = 2.8.sp, fontSize = 11.sp), color = Color.White.copy(alpha = 0.38f))
-        Spacer(Modifier.height(4.dp))
-        Text(value, style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, fontSize = 28.sp), color = color)
-        Text(unit, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 1.5.sp, fontSize = 10.sp), color = CyanLabel.copy(alpha = 0.8f))
+        Text(label, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium, letterSpacing = 2.8.sp, fontSize = 12.sp), color = Color.White.copy(alpha = 0.45f))
+        Spacer(Modifier.height(6.dp))
+        Text(value, style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, fontSize = 38.sp), color = color)
+        Text(unit, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 1.5.sp, fontSize = 12.sp), color = CyanLabel.copy(alpha = 0.8f))
     }
 }
 
