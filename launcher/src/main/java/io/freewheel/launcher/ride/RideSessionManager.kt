@@ -27,6 +27,15 @@ class RideSessionManager(
     private val _rideActive = MutableStateFlow(false)
     val rideActive: StateFlow<Boolean> = _rideActive.asStateFlow()
 
+    private val _ridePaused = MutableStateFlow(false)
+    val ridePaused: StateFlow<Boolean> = _ridePaused.asStateFlow()
+
+    private var lastPedalingTime = 0L
+    private var totalPausedMs = 0L
+    private var pauseStartTime = 0L
+    private val RPM_PAUSE_THRESHOLD = 5
+    private val PAUSE_DELAY_MS = 3000L
+
     private val _ridePower = MutableStateFlow(0)
     val ridePower: StateFlow<Int> = _ridePower.asStateFlow()
 
@@ -94,8 +103,11 @@ class RideSessionManager(
         }
 
         _rideActive.value = true
+        _ridePaused.value = false
+        totalPausedMs = 0L
         rideStartTime = System.currentTimeMillis()
         lastSampleTime = rideStartTime
+        lastPedalingTime = rideStartTime
         ridePowerSum = 0
         rideRpmSum = 0
         rideResistanceSum = 0
@@ -148,8 +160,10 @@ class RideSessionManager(
         // Timer
         rideTimerJob = scope.launch {
             while (_rideActive.value) {
-                _rideElapsedSeconds.value = ((System.currentTimeMillis() - rideStartTime) / 1000).toInt()
-                _powerHistory.value = _powerHistory.value + _ridePower.value
+                if (!_ridePaused.value) {
+                    _rideElapsedSeconds.value = ((System.currentTimeMillis() - rideStartTime - totalPausedMs) / 1000).toInt()
+                    _powerHistory.value = _powerHistory.value + _ridePower.value
+                }
                 delay(1000)
             }
         }
@@ -215,12 +229,31 @@ class RideSessionManager(
         _rideRpm.value = data.rpm
         _rideResistance.value = data.resistanceLevel
 
+        // Auto-pause: pause when not pedaling, resume when pedaling
+        val now = System.currentTimeMillis()
+        if (data.rpm >= RPM_PAUSE_THRESHOLD) {
+            lastPedalingTime = now
+            if (_ridePaused.value) {
+                // Resume
+                totalPausedMs += now - pauseStartTime
+                _ridePaused.value = false
+            }
+        } else if (!_ridePaused.value && _rideActive.value && (now - lastPedalingTime > PAUSE_DELAY_MS)) {
+            // Pause
+            _ridePaused.value = true
+            pauseStartTime = now
+        }
+
+        if (_ridePaused.value) {
+            lastSampleTime = now // don't accumulate distance while paused
+            return
+        }
+
         // Speed from power using simplified cycling power model
         val currentSpeedMph = RidePhysics.speedMph(power)
         _rideSpeedMph.value = currentSpeedMph
 
         // Update distance incrementally
-        val now = System.currentTimeMillis()
         val deltaHours = (now - lastSampleTime) / 3_600_000.0
         _rideDistanceMiles.value += (currentSpeedMph * deltaHours).toFloat()
         lastSampleTime = now
@@ -232,7 +265,7 @@ class RideSessionManager(
         if (power > rideMaxPower) rideMaxPower = power
 
         // Calories from average power
-        val elapsedHours = (now - rideStartTime) / 3_600_000.0
+        val elapsedHours = (now - rideStartTime - totalPausedMs) / 3_600_000.0
         val avgPower = if (rideSampleCount > 0) ridePowerSum.toDouble() / rideSampleCount else 0.0
         _rideCalories.value = RidePhysics.calories(avgPower, elapsedHours)
     }

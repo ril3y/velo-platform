@@ -104,6 +104,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     val rideSpeedMph get() = rideSessionManager.rideSpeedMph
     val rideDistanceMiles get() = rideSessionManager.rideDistanceMiles
     val rideHeartRate get() = rideSessionManager.rideHeartRate
+    val ridePaused get() = rideSessionManager.ridePaused
     val rideConnected get() = rideSessionManager.rideConnected
     val ridePowerHistory get() = rideSessionManager.powerHistory
     val lastOverlaySummary get() = rideSessionManager.lastOverlaySummary

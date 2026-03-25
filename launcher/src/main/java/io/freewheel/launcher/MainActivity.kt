@@ -7,9 +7,15 @@ import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.freewheel.launcher.data.HomeTile
 import io.freewheel.launcher.data.RideSummary
@@ -442,17 +448,37 @@ fun LauncherApp(vm: LauncherViewModel) {
             val hr by vm.rideHeartRate.collectAsState()
             val connected by vm.bridgeConnected.collectAsState()
             val powerHist by vm.ridePowerHistory.collectAsState()
+            val paused by vm.ridePaused.collectAsState()
 
-            WorkoutRideScreen(
-                workout = activeWorkout!!,
-                power = power, rpm = rpm, resistance = resistance,
-                calories = calories, elapsedSeconds = elapsed,
-                speedMph = speed, distanceMiles = distance,
-                heartRate = hr, isConnected = connected,
-                powerHistory = powerHist,
-                ftp = 200, // TODO: get from fitness config
-                onEndRide = { vm.stopCurrentRide(activeWorkout?.id, activeWorkout?.name) },
-            )
+            Box(modifier = Modifier.fillMaxSize()) {
+                WorkoutRideScreen(
+                    workout = activeWorkout!!,
+                    power = power, rpm = rpm, resistance = resistance,
+                    calories = calories, elapsedSeconds = elapsed,
+                    speedMph = speed, distanceMiles = distance,
+                    heartRate = hr, isConnected = connected,
+                    powerHistory = powerHist,
+                    ftp = 200,
+                    onEndRide = { vm.stopCurrentRide(activeWorkout?.id, activeWorkout?.name) },
+                )
+                if (paused) {
+                    Box(
+                        modifier = Modifier.fillMaxSize()
+                            .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.7f)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("PAUSED", style = MaterialTheme.typography.displayLarge.copy(
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                letterSpacing = 8.sp,
+                            ), color = io.freewheel.launcher.ui.theme.NeonAccent)
+                            Spacer(Modifier.height(16.dp))
+                            Text("Start pedaling to resume", style = MaterialTheme.typography.titleLarge,
+                                color = io.freewheel.launcher.ui.theme.TextSecondary)
+                        }
+                    }
+                }
+            }
         }
 
         currentScreen == Screen.RIDE_SUMMARY && rideSummary != null -> {

@@ -109,46 +109,6 @@ fun WorkoutRideScreen(
                 )
             },
     ) {
-        // Top bar
-        Row(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .fillMaxWidth()
-                .background(Color.Black.copy(alpha = 0.55f))
-                .padding(horizontal = 24.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                workout.name,
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                color = TextPrimary,
-            )
-            Spacer(Modifier.weight(1f))
-            // Connection pill
-            Row(
-                modifier = Modifier
-                    .background(
-                        if (isConnected) StatusGreen.copy(alpha = 0.20f) else StatusRed.copy(alpha = 0.20f),
-                        RoundedCornerShape(20.dp),
-                    )
-                    .border(
-                        1.dp,
-                        if (isConnected) StatusGreen.copy(alpha = 0.4f) else StatusRed.copy(alpha = 0.4f),
-                        RoundedCornerShape(20.dp),
-                    )
-                    .padding(horizontal = 14.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(Modifier.size(8.dp).background(if (isConnected) StatusGreen else StatusRed, CircleShape))
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    if (isConnected) "Connected" else "Disconnected",
-                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium),
-                    color = if (isConnected) StatusGreen else StatusRed,
-                )
-            }
-        }
-
         if (segments.isEmpty()) {
             // ── Free ride mode: full-screen immersive stats ──
 
