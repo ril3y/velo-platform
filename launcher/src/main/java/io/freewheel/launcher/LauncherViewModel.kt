@@ -37,6 +37,7 @@ import kotlinx.coroutines.launch
 
 sealed class RideNavigationEvent {
     object FreeRide : RideNavigationEvent()
+    object GoHome : RideNavigationEvent()
     data class WorkoutRide(val workout: Workout) : RideNavigationEvent()
     data class WorkoutWithMedia(val workout: Workout, val mediaPackage: String) : RideNavigationEvent()
     data class ShowSummary(val summary: io.freewheel.launcher.data.RideSummary) : RideNavigationEvent()
@@ -218,9 +219,13 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun stopCurrentRide(workoutId: String? = null, workoutName: String? = null): io.freewheel.launcher.data.RideSummary? {
+        _workoutRideActive.value = false
         val summary = rideSessionManager.stopRide(workoutId, workoutName)
         if (summary != null) {
             _rideNavigationEvent.value = RideNavigationEvent.ShowSummary(summary)
+        } else {
+            // No summary (ride too short or never started) — go home anyway
+            _rideNavigationEvent.value = RideNavigationEvent.GoHome
         }
         return summary
     }

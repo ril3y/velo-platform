@@ -177,6 +177,11 @@ fun LauncherApp(vm: LauncherViewModel) {
                 currentScreen = Screen.RIDE_SUMMARY
                 vm.clearRideNavigationEvent()
             }
+            is RideNavigationEvent.GoHome -> {
+                activeWorkout = null
+                currentScreen = Screen.HOME
+                vm.clearRideNavigationEvent()
+            }
             null -> {}
         }
     }

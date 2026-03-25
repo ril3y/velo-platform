@@ -70,7 +70,6 @@ class UpdateManager(
         /** Maps APK filename prefix (label) to Android package name for all monorepo apps. */
         private val LABEL_TO_PACKAGE = mapOf(
             "launcher" to "io.freewheel.launcher",
-            "freeride" to "io.freewheel.freeride",
             "freewheelbridge" to "io.freewheel.bridge",
         )
     }
