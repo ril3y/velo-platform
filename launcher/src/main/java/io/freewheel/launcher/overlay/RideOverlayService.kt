@@ -152,6 +152,30 @@ class RideOverlayService : Service() {
         )
         params.gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
 
+        // Drag support
+        var initialX = 0
+        var initialY = 0
+        var initialTouchX = 0f
+        var initialTouchY = 0f
+        overlayView?.setOnTouchListener { v, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    initialX = params.x
+                    initialY = params.y
+                    initialTouchX = event.rawX
+                    initialTouchY = event.rawY
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    params.x = initialX + (event.rawX - initialTouchX).toInt()
+                    params.y = initialY + (event.rawY - initialTouchY).toInt()
+                    try { windowManager?.updateViewLayout(v, params) } catch (_: Exception) {}
+                    true
+                }
+                else -> false
+            }
+        }
+
         try {
             windowManager?.addView(overlayView, params)
         } catch (e: Exception) {
@@ -411,22 +435,34 @@ class RideOverlayService : Service() {
     }
 
     private var rideActive = false
+    private var ridePaused = false
+    private var pauseStartTime = 0L
+    private var totalPausedMs = 0L
+    private var pauseOverlayView: View? = null
+    private val RPM_PAUSE_THRESHOLD = 5  // below this RPM = not pedaling
+    private val PAUSE_DELAY_MS = 3000L   // wait 3s of no pedaling before pausing
+    private var lastPedalingTime = 0L
 
     private fun startRide() {
         rideActive = true
+        ridePaused = false
+        totalPausedMs = 0L
         rideStartTime = System.currentTimeMillis()
         lastSampleTime = rideStartTime
+        lastPedalingTime = rideStartTime
         powerHistory.clear()
 
         // Start workout on the bridge
         bridge.startWorkout()
 
-        // Timer
+        // Timer (only counts non-paused time)
         scope.launch {
             while (isActive) {
                 delay(1000)
-                elapsedSeconds = ((System.currentTimeMillis() - rideStartTime) / 1000).toInt()
-                powerHistory.add(power)
+                if (!ridePaused) {
+                    elapsedSeconds = ((System.currentTimeMillis() - rideStartTime - totalPausedMs) / 1000).toInt()
+                    powerHistory.add(power)
+                }
                 updateUI()
             }
         }
@@ -438,22 +474,34 @@ class RideOverlayService : Service() {
                 rpm = data.rpm
                 resistance = data.resistanceLevel
 
-                speedMph = RidePhysics.speedMph(power)
-
+                // Auto-pause logic: pause when not pedaling, resume when pedaling
                 val now = System.currentTimeMillis()
-                val deltaHours = (now - lastSampleTime) / 3_600_000.0
-                distanceMiles += (speedMph * deltaHours).toFloat()
-                lastSampleTime = now
+                if (rpm >= RPM_PAUSE_THRESHOLD) {
+                    lastPedalingTime = now
+                    if (ridePaused) resumeRide()
+                } else if (!ridePaused && rideActive && (now - lastPedalingTime > PAUSE_DELAY_MS)) {
+                    pauseRide()
+                }
 
-                ridePowerSum += power
-                rideRpmSum += rpm
-                rideResistanceSum += resistance
-                rideSampleCount++
-                if (power > rideMaxPower) rideMaxPower = power
+                if (!ridePaused) {
+                    speedMph = RidePhysics.speedMph(power)
 
-                val elapsedHours = (now - rideStartTime) / 3_600_000.0
-                val avgPower = if (rideSampleCount > 0) ridePowerSum.toDouble() / rideSampleCount else 0.0
-                calories = RidePhysics.calories(avgPower, elapsedHours)
+                    val deltaHours = (now - lastSampleTime) / 3_600_000.0
+                    distanceMiles += (speedMph * deltaHours).toFloat()
+                    lastSampleTime = now
+
+                    ridePowerSum += power
+                    rideRpmSum += rpm
+                    rideResistanceSum += resistance
+                    rideSampleCount++
+                    if (power > rideMaxPower) rideMaxPower = power
+
+                    val elapsedHours = (now - rideStartTime - totalPausedMs) / 3_600_000.0
+                    val avgPower = if (rideSampleCount > 0) ridePowerSum.toDouble() / rideSampleCount else 0.0
+                    calories = RidePhysics.calories(avgPower, elapsedHours)
+                } else {
+                    lastSampleTime = now  // don't accumulate distance while paused
+                }
 
                 updateUI()
             }
@@ -485,6 +533,75 @@ class RideOverlayService : Service() {
                 }
             }
         }
+    }
+
+    private fun pauseRide() {
+        if (ridePaused) return
+        ridePaused = true
+        pauseStartTime = System.currentTimeMillis()
+
+        // Pause media playback
+        try {
+            val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            am.dispatchMediaKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_MEDIA_PAUSE))
+            am.dispatchMediaKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_MEDIA_PAUSE))
+        } catch (_: Exception) {}
+
+        // Show pause overlay
+        showPauseOverlay()
+    }
+
+    private fun resumeRide() {
+        if (!ridePaused) return
+        totalPausedMs += System.currentTimeMillis() - pauseStartTime
+        ridePaused = false
+
+        // Resume media playback
+        try {
+            val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            am.dispatchMediaKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_MEDIA_PLAY))
+            am.dispatchMediaKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_MEDIA_PLAY))
+        } catch (_: Exception) {}
+
+        // Remove pause overlay
+        removePauseOverlay()
+    }
+
+    private fun showPauseOverlay() {
+        if (pauseOverlayView != null) return
+        val dp = resources.displayMetrics.density
+        val pauseView = TextView(this).apply {
+            text = "PAUSED\n\nStart pedaling to resume"
+            setTextColor(Color.WHITE)
+            textSize = 24f
+            gravity = Gravity.CENTER
+            setTypeface(typeface, Typeface.BOLD)
+            setBackgroundColor(Color.parseColor("#CC000000"))
+            setPadding((40 * dp).toInt(), (40 * dp).toInt(), (40 * dp).toInt(), (40 * dp).toInt())
+        }
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            else
+                @Suppress("DEPRECATION")
+                WindowManager.LayoutParams.TYPE_PHONE,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+            PixelFormat.TRANSLUCENT,
+        )
+        try {
+            windowManager?.addView(pauseView, params)
+            pauseOverlayView = pauseView
+        } catch (_: Exception) {}
+    }
+
+    private fun removePauseOverlay() {
+        pauseOverlayView?.let {
+            try { windowManager?.removeView(it) } catch (_: Exception) {}
+        }
+        pauseOverlayView = null
     }
 
     private fun updateUI() {
@@ -686,6 +803,7 @@ class RideOverlayService : Service() {
         effortBarOverlay = null
         effortBarView = null
         removeMiniFab()
+        removePauseOverlay()
         restoreStatusBar()
     }
 
