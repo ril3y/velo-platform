@@ -56,7 +56,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onPause() {
         super.onPause()
-        HomeButtonOverlay.show(this)
+        // Don't show HOME button during active workouts — user must END ride from overlay
+        val rideActive = viewModelRef?.rideActive?.value == true
+        if (!rideActive) {
+            HomeButtonOverlay.show(this)
+        }
     }
 
     override fun onResume() {
@@ -112,6 +116,7 @@ fun LauncherApp(vm: LauncherViewModel) {
     // Workout flow state
     val selectedWorkout by vm.selectedWorkout.collectAsState()
     val selectedMedia by vm.selectedMedia.collectAsState()
+    val rideActive by vm.rideActive.collectAsState()
 
     // App categories
     val fitnessApps by vm.fitnessApps.collectAsState()
@@ -456,7 +461,32 @@ fun LauncherApp(vm: LauncherViewModel) {
         }
 
         else -> {
-            HomeScreen(
+            if (rideActive) {
+                // Workout is active but user reached home (e.g., physical home button)
+                // Show a "workout in progress" screen instead of home
+                WorkoutActiveScreen(
+                    power = vm.ridePower.collectAsState().value,
+                    rpm = vm.rideRpm.collectAsState().value,
+                    elapsed = vm.rideElapsedSeconds.collectAsState().value,
+                    workoutName = selectedWorkout?.name,
+                    onReturnToMedia = {
+                        selectedMedia?.let { media ->
+                            val app = context as android.app.Activity
+                            app.packageManager.getLaunchIntentForPackage(media.packageName)?.let {
+                                it.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                context.startActivity(it)
+                            }
+                        }
+                    },
+                    onEndWorkout = {
+                        vm.stopCurrentRide(selectedWorkout?.id, selectedWorkout?.name)
+                        // Stop overlay service
+                        context.stopService(
+                            android.content.Intent(context, io.freewheel.launcher.overlay.RideOverlayService::class.java)
+                        )
+                    },
+                )
+            } else HomeScreen(
                 tiles = vm.getHomeTiles(),
                 allApps = allApps,
                 recentRides = recentRides,
