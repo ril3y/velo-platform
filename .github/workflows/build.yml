@@ -87,7 +87,6 @@ jobs:
         run: |
           mkdir -p artifacts
           cp launcher/build/outputs/apk/release/launcher-release.apk artifacts/velolauncher.apk
-          cp freeride/build/outputs/apk/release/freeride-release.apk artifacts/freeride.apk
 
           if [ -f freewheelbridge/build/outputs/apk/freewheelbridge.apk ]; then
             cp freewheelbridge/build/outputs/apk/freewheelbridge.apk artifacts/serialbridge.apk

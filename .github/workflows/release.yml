@@ -91,7 +91,6 @@ jobs:
         run: |
           mkdir -p release
           cp launcher/build/outputs/apk/release/launcher-release.apk release/velolauncher.apk
-          cp freeride/build/outputs/apk/release/freeride-release.apk release/freeride.apk
           cp freewheelbridge/build/outputs/apk/freewheelbridge.apk release/serialbridge.apk
           cp ucblib/build/libs/ucblib.jar release/
           cp velofit/build/libs/velofit.jar release/
@@ -120,7 +119,6 @@ jobs:
           generate_release_notes: true
           files: |
             release/velolauncher.apk
-            release/freeride.apk
             release/serialbridge.apk
             release/ucblib.jar
             release/velofit.jar
