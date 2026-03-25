@@ -5,25 +5,26 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.PixelFormat
-import android.graphics.Typeface
-import android.graphics.drawable.GradientDrawable
 import android.os.IBinder
 import android.util.Log
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
-import android.widget.TextView
 
 /**
- * Floating home button overlay that appears when an app is launched from the launcher.
- * Provides a small draggable pill in the bottom-left corner that returns the user
- * to the VeloLauncher home screen. Auto-dismisses when the launcher resumes.
+ * Bottom-edge swipe gesture overlay — replaces the old floating HOME button.
+ * A thin invisible strip at the bottom of the screen detects upward swipes
+ * and navigates home. Works like Android's gesture navigation bar.
+ *
+ * Always shown when an app is in foreground (including during workouts).
+ * Doesn't interfere with app UI since it's invisible and only responds to swipes.
  */
 class HomeButtonOverlay : Service() {
 
     companion object {
-        private const val TAG = "HomeButtonOverlay"
+        private const val TAG = "HomeGesture"
+        private const val SWIPE_THRESHOLD_DP = 60  // minimum upward swipe distance
 
         fun show(context: Context) {
             context.startService(Intent(context, HomeButtonOverlay::class.java))
@@ -35,93 +36,70 @@ class HomeButtonOverlay : Service() {
     }
 
     private var windowManager: WindowManager? = null
-    private var buttonView: View? = null
+    private var edgeView: View? = null
 
     override fun onCreate() {
         super.onCreate()
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-        createButton()
+        createEdgeZone()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
         super.onDestroy()
-        removeButton()
+        removeEdgeZone()
     }
 
-    private fun createButton() {
+    private fun createEdgeZone() {
         val dp = resources.displayMetrics.density
+        val edgeHeight = (20 * dp).toInt()  // thin strip at bottom
+        val swipeThreshold = SWIPE_THRESHOLD_DP * dp
 
-        val btn = TextView(this).apply {
-            text = "\u25C0 HOME"
-            setTextColor(Color.WHITE)
-            textSize = 11f
-            setTypeface(typeface, Typeface.BOLD)
-            gravity = Gravity.CENTER
-            setPadding((14 * dp).toInt(), (8 * dp).toInt(), (14 * dp).toInt(), (8 * dp).toInt())
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#CC1A1B2E"))
-                cornerRadius = 20 * dp
-                setStroke((1 * dp).toInt(), Color.parseColor("#4422D3EE"))
-            }
-            alpha = 0.7f
+        val zone = View(this).apply {
+            // Fully transparent — invisible to the user
+            setBackgroundColor(Color.TRANSPARENT)
         }
 
         val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            edgeHeight,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT,
         ).apply {
-            gravity = Gravity.BOTTOM or Gravity.START
-            x = (16 * dp).toInt()
-            y = (16 * dp).toInt()
+            gravity = Gravity.BOTTOM
         }
 
-        // Drag + tap support
-        var initialX = 0
-        var initialY = 0
-        var initialTouchX = 0f
-        var initialTouchY = 0f
+        var downY = 0f
+        var downTime = 0L
 
-        btn.setOnTouchListener { v, event ->
+        zone.setOnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    initialX = params.x
-                    initialY = params.y
-                    initialTouchX = event.rawX
-                    initialTouchY = event.rawY
-                    v.alpha = 1.0f
-                    true
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    params.x = initialX + (event.rawX - initialTouchX).toInt()
-                    params.y = initialY - (event.rawY - initialTouchY).toInt()
-                    try {
-                        windowManager?.updateViewLayout(v, params)
-                    } catch (_: Exception) {}
+                    downY = event.rawY
+                    downTime = System.currentTimeMillis()
                     true
                 }
                 MotionEvent.ACTION_UP -> {
-                    v.alpha = 0.7f
-                    val dx = Math.abs(event.rawX - initialTouchX)
-                    val dy = Math.abs(event.rawY - initialTouchY)
-                    if (dx < 10 && dy < 10) {
+                    val deltaY = downY - event.rawY  // positive = upward swipe
+                    val deltaTime = System.currentTimeMillis() - downTime
+                    if (deltaY > swipeThreshold && deltaTime < 500) {
+                        // Swipe up detected — go home
                         goHome()
                     }
                     true
                 }
-                else -> false
+                else -> true
             }
         }
 
         try {
-            windowManager?.addView(btn, params)
-            buttonView = btn
+            windowManager?.addView(zone, params)
+            edgeView = zone
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to add home button overlay", e)
+            Log.e(TAG, "Failed to add edge gesture zone", e)
         }
     }
 
@@ -133,12 +111,12 @@ class HomeButtonOverlay : Service() {
         startActivity(intent)
     }
 
-    private fun removeButton() {
-        buttonView?.let {
+    private fun removeEdgeZone() {
+        edgeView?.let {
             try {
                 windowManager?.removeView(it)
             } catch (_: Exception) {}
         }
-        buttonView = null
+        edgeView = null
     }
 }

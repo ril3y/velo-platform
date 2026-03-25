@@ -57,11 +57,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onPause() {
         super.onPause()
-        // Don't show HOME button during active workouts — user must END ride from overlay
-        val rideActive = viewModelRef?.rideActive?.value == true
-        if (!rideActive) {
-            HomeButtonOverlay.show(this)
-        }
+        // Always show the edge swipe zone — it's invisible and doesn't interfere with apps
+        HomeButtonOverlay.show(this)
     }
 
     override fun onResume() {
