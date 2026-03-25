@@ -1,10 +1,14 @@
 package io.freewheel.launcher.overlay
 
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import android.view.Gravity
@@ -33,6 +37,8 @@ class HomeButtonOverlay : Service() {
         fun hide(context: Context) {
             context.stopService(Intent(context, HomeButtonOverlay::class.java))
         }
+
+        private const val NOTIFICATION_ID = 1002
     }
 
     private var windowManager: WindowManager? = null
@@ -41,7 +47,23 @@ class HomeButtonOverlay : Service() {
     override fun onCreate() {
         super.onCreate()
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+        // Run as foreground service so Android doesn't kill it
+        val channelId = "home_gesture"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(channelId, "Navigation", NotificationManager.IMPORTANCE_MIN)
+            channel.setShowBadge(false)
+            (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).createNotificationChannel(channel)
+        }
+        val notification = Notification.Builder(this, channelId)
+            .setSmallIcon(android.R.drawable.ic_menu_compass)
+            .setOngoing(true)
+            .build()
+        startForeground(NOTIFICATION_ID, notification)
         createEdgeZone()
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        return START_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

@@ -58,7 +58,12 @@ class MainActivity : ComponentActivity() {
     override fun onPause() {
         super.onPause()
         // Always show the edge swipe zone — it's invisible and doesn't interfere with apps
-        HomeButtonOverlay.show(this)
+        // Use startForegroundService so it survives process kills
+        try {
+            startForegroundService(Intent(this, HomeButtonOverlay::class.java))
+        } catch (_: Exception) {
+            HomeButtonOverlay.show(this)
+        }
     }
 
     override fun onResume() {
