@@ -1,4 +1,4 @@
-package io.freewheel.freeride.ui
+package io.freewheel.launcher.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -28,10 +28,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.freewheel.fit.VeloFitnessClient
-import io.freewheel.freeride.RideViewModel
-import io.freewheel.freeride.WorkoutData
-import io.freewheel.freeride.WorkoutSegment
-import io.freewheel.freeride.ui.theme.*
+import io.freewheel.launcher.data.Workout
+import io.freewheel.launcher.data.WorkoutSegment
+import io.freewheel.launcher.ui.theme.*
 
 private val GlassPanelShape = RoundedCornerShape(26.dp)
 private val CyanLabel = Color(0xFF22D3EE)
@@ -70,29 +69,29 @@ private fun secondsUntilNextSegment(segments: List<WorkoutSegment>, elapsed: Int
 
 @Composable
 fun WorkoutRideScreen(
-    vm: RideViewModel,
-    workout: WorkoutData,
+    workout: Workout,
+    power: Int,
+    rpm: Int,
+    resistance: Int,
+    calories: Int,
+    elapsedSeconds: Int,
+    speedMph: Float,
+    distanceMiles: Float,
+    heartRate: Int,
+    isConnected: Boolean,
+    powerHistory: List<Int>,
+    ftp: Int,
     onEndRide: () -> Unit,
 ) {
-    val power by vm.ridePower.collectAsState()
-    val rpm by vm.rideRpm.collectAsState()
-    val resistance by vm.rideResistance.collectAsState()
-    val heartRate by vm.rideHeartRate.collectAsState()
-    val elapsed by vm.rideElapsedSeconds.collectAsState()
-    val calories by vm.rideCalories.collectAsState()
-    val connected by vm.rideConnected.collectAsState()
-    val actualPower by vm.powerHistory.collectAsState()
-
     val context = LocalContext.current
     val fitnessClient = remember { VeloFitnessClient(context) }
     var difficulty by remember { mutableFloatStateOf(1.0f) }
 
     val segments = workout.segments
-    val currentIdx = currentSegmentIndex(segments, elapsed)
+    val currentIdx = currentSegmentIndex(segments, elapsedSeconds)
     val currentSegment = segments.getOrNull(currentIdx)
     val nextSegment = segments.getOrNull(currentIdx + 1)
-    val secsUntilNext = secondsUntilNextSegment(segments, elapsed)
-    val ftp = remember { fitnessClient.fitnessConfig.ftp }
+    val secsUntilNext = secondsUntilNextSegment(segments, elapsedSeconds)
 
     Box(
         modifier = Modifier
@@ -129,23 +128,23 @@ fun WorkoutRideScreen(
             Row(
                 modifier = Modifier
                     .background(
-                        if (connected) StatusGreen.copy(alpha = 0.20f) else StatusRed.copy(alpha = 0.20f),
+                        if (isConnected) StatusGreen.copy(alpha = 0.20f) else StatusRed.copy(alpha = 0.20f),
                         RoundedCornerShape(20.dp),
                     )
                     .border(
                         1.dp,
-                        if (connected) StatusGreen.copy(alpha = 0.4f) else StatusRed.copy(alpha = 0.4f),
+                        if (isConnected) StatusGreen.copy(alpha = 0.4f) else StatusRed.copy(alpha = 0.4f),
                         RoundedCornerShape(20.dp),
                     )
                     .padding(horizontal = 14.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(Modifier.size(8.dp).background(if (connected) StatusGreen else StatusRed, CircleShape))
+                Box(Modifier.size(8.dp).background(if (isConnected) StatusGreen else StatusRed, CircleShape))
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    if (connected) "Connected" else "Disconnected",
+                    if (isConnected) "Connected" else "Disconnected",
                     style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium),
-                    color = if (connected) StatusGreen else StatusRed,
+                    color = if (isConnected) StatusGreen else StatusRed,
                 )
             }
         }
@@ -187,8 +186,8 @@ fun WorkoutRideScreen(
                     WorkoutGraph(
                         segments = segments,
                         totalSeconds = segments.sumOf { it.durationSeconds },
-                        elapsedSeconds = elapsed,
-                        actualPower = actualPower,
+                        elapsedSeconds = elapsedSeconds,
+                        actualPower = powerHistory,
                         ftp = ftp,
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -220,7 +219,7 @@ fun WorkoutRideScreen(
                     Spacer(Modifier.height(4.dp))
                     Text(workout.name, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold, fontSize = 20.sp), color = TextPrimary)
                     Spacer(Modifier.height(2.dp))
-                    Text("${formatDuration(elapsed)} elapsed \u00B7 segment ${currentIdx + 1} of ${segments.size}", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                    Text("${formatDuration(elapsedSeconds)} elapsed \u00B7 segment ${currentIdx + 1} of ${segments.size}", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
 
                     val msg = currentSegment?.message
                     if (!msg.isNullOrBlank()) {
@@ -232,8 +231,8 @@ fun WorkoutRideScreen(
                     WorkoutGraph(
                         segments = segments,
                         totalSeconds = segments.sumOf { it.durationSeconds },
-                        elapsedSeconds = elapsed,
-                        actualPower = actualPower,
+                        elapsedSeconds = elapsedSeconds,
+                        actualPower = powerHistory,
                         ftp = ftp,
                         modifier = Modifier.fillMaxWidth(),
                         compact = true,

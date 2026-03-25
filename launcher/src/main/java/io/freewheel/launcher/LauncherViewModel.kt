@@ -35,6 +35,13 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+sealed class RideNavigationEvent {
+    object FreeRide : RideNavigationEvent()
+    data class WorkoutRide(val workout: Workout) : RideNavigationEvent()
+    data class WorkoutWithMedia(val workout: Workout, val mediaPackage: String) : RideNavigationEvent()
+    data class ShowSummary(val summary: io.freewheel.launcher.data.RideSummary) : RideNavigationEvent()
+}
+
 class LauncherViewModel(application: Application) : AndroidViewModel(application) {
 
     private val prefs = application.getSharedPreferences("velolauncher", Context.MODE_PRIVATE)
@@ -79,6 +86,14 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         rideRepository.getAllRides()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    // --- Ride navigation ---
+    private val _rideNavigationEvent = MutableStateFlow<RideNavigationEvent?>(null)
+    val rideNavigationEvent: StateFlow<RideNavigationEvent?> = _rideNavigationEvent.asStateFlow()
+
+    fun clearRideNavigationEvent() {
+        _rideNavigationEvent.value = null
+    }
+
     // --- Exposed state: Ride session (delegated) ---
     val rideActive get() = rideSessionManager.rideActive
     val ridePower get() = rideSessionManager.ridePower
@@ -90,6 +105,10 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     val rideDistanceMiles get() = rideSessionManager.rideDistanceMiles
     val rideHeartRate get() = rideSessionManager.rideHeartRate
     val rideConnected get() = rideSessionManager.rideConnected
+    val ridePowerHistory get() = rideSessionManager.powerHistory
+    val lastOverlaySummary get() = rideSessionManager.lastOverlaySummary
+
+    fun clearOverlaySummary() = rideSessionManager.clearOverlaySummary()
 
     // --- Exposed state: Bridge (for diagnostics, calibration, OTA) ---
     val bridgeConnected get() = bridgeConnectionManager.connected
@@ -120,12 +139,6 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     // --- Exposed state: Settings (auto-restart) ---
     private val _autoRestartBridge = MutableStateFlow(prefs.getBoolean("auto_restart_bridge", true))
     val autoRestartBridge: StateFlow<Boolean> = _autoRestartBridge.asStateFlow()
-
-    // --- Exposed state: Default fitness app ---
-    private val _defaultFitnessApp = MutableStateFlow(
-        prefs.getString("default_fitness_app", "io.freewheel.freeride") ?: "io.freewheel.freeride"
-    )
-    val defaultFitnessApp: StateFlow<String> = _defaultFitnessApp.asStateFlow()
 
     // --- Exposed state: Task manager (delegated) ---
     val runningApps get() = taskRepository.runningApps
@@ -198,26 +211,18 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     // --- Ride operations ---
 
-    fun startRide() {
-        val app = getApplication<Application>()
-        val pkg = _defaultFitnessApp.value
-        val launchIntent = app.packageManager.getLaunchIntentForPackage(pkg)?.apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        if (launchIntent != null) {
-            try {
-                app.startActivity(launchIntent)
-            } catch (_: Exception) {
-                // App not launchable — fall back to internal session
-                rideSessionManager.startRide()
-            }
-        } else {
-            // App not installed — fall back to internal session
-            rideSessionManager.startRide()
-        }
+    fun startFreeRide() {
+        rideSessionManager.startRide()
+        _rideNavigationEvent.value = RideNavigationEvent.FreeRide
     }
 
-    fun stopRide() = rideSessionManager.stopRide()
+    fun stopCurrentRide(workoutId: String? = null, workoutName: String? = null): io.freewheel.launcher.data.RideSummary? {
+        val summary = rideSessionManager.stopRide(workoutId, workoutName)
+        if (summary != null) {
+            _rideNavigationEvent.value = RideNavigationEvent.ShowSummary(summary)
+        }
+        return summary
+    }
 
     // --- Bridge pass-through for diagnostics/calibration/OTA ---
 
@@ -261,11 +266,6 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         prefs.edit().putBoolean("auto_restart_bridge", enabled).apply()
     }
 
-    fun setDefaultFitnessApp(packageName: String) {
-        _defaultFitnessApp.value = packageName
-        prefs.edit().putString("default_fitness_app", packageName).apply()
-    }
-
     fun getPinnedApps(): List<Pair<String, String>> {
         return getHomeTiles().filterIsInstance<HomeTile.App>().map { it.packageName to it.label }
     }
@@ -302,11 +302,30 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         _selectedMedia.value = media
     }
 
-    fun startWorkoutRide() {
+    fun startWorkoutStatsOnly() {
         val workout = _selectedWorkout.value ?: return
         _workoutRideActive.value = true
-        // Start the ride through the bridge (launcher is the owner)
         rideSessionManager.startRide()
+        _rideNavigationEvent.value = RideNavigationEvent.WorkoutRide(workout)
+    }
+
+    fun startWorkoutWithMedia() {
+        val workout = _selectedWorkout.value ?: return
+        val media = _selectedMedia.value ?: return
+        _workoutRideActive.value = true
+        rideSessionManager.startRide()
+        // Start overlay service
+        val app = getApplication<Application>()
+        val serviceIntent = Intent(app, io.freewheel.launcher.overlay.RideOverlayService::class.java).apply {
+            action = "io.freewheel.launcher.OVERLAY_START"
+            putExtra("workout_json", workout.toJson())
+        }
+        app.startForegroundService(serviceIntent)
+        // Launch the media app
+        app.packageManager.getLaunchIntentForPackage(media.packageName)?.let {
+            it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            app.startActivity(it)
+        }
     }
 
     fun stopWorkoutRide() {

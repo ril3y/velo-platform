@@ -2,6 +2,7 @@ package io.freewheel.launcher.ride
 
 import io.freewheel.launcher.bridge.BridgeConnectionManager
 import io.freewheel.launcher.data.RideRecord
+import io.freewheel.launcher.data.RideSummary
 import io.freewheel.ucb.RidePhysics
 import io.freewheel.ucb.SensorData
 import kotlinx.coroutines.CoroutineScope
@@ -50,6 +51,20 @@ class RideSessionManager(
     private val _rideHeartRate = MutableStateFlow(0)
     val rideHeartRate: StateFlow<Int> = _rideHeartRate.asStateFlow()
 
+    private val _powerHistory = MutableStateFlow<List<Int>>(emptyList())
+    val powerHistory: StateFlow<List<Int>> = _powerHistory.asStateFlow()
+
+    private val _lastOverlaySummary = MutableStateFlow<RideSummary?>(null)
+    val lastOverlaySummary: StateFlow<RideSummary?> = _lastOverlaySummary.asStateFlow()
+
+    fun setOverlaySummary(summary: RideSummary) {
+        _lastOverlaySummary.value = summary
+    }
+
+    fun clearOverlaySummary() {
+        _lastOverlaySummary.value = null
+    }
+
     // Delegate connection state to bridge
     val rideConnected: StateFlow<Boolean> get() = bridge.connected
 
@@ -60,6 +75,8 @@ class RideSessionManager(
     private var rideResistanceSum = 0L
     private var rideSampleCount = 0
     private var rideMaxPower = 0
+    private var heartRateSum = 0L
+    private var heartRateSamples = 0
     private var rideTimerJob: Job? = null
     private var sensorCollectorJob: Job? = null
     private var heartRateCollectorJob: Job? = null
@@ -84,6 +101,9 @@ class RideSessionManager(
         rideResistanceSum = 0
         rideSampleCount = 0
         rideMaxPower = 0
+        heartRateSum = 0
+        heartRateSamples = 0
+        _powerHistory.value = emptyList()
         _ridePower.value = 0
         _rideRpm.value = 0
         _rideResistance.value = 0
@@ -109,6 +129,10 @@ class RideSessionManager(
         heartRateCollectorJob = scope.launch {
             bridge.heartRate.collect { hr ->
                 _rideHeartRate.value = hr
+                if (hr > 0) {
+                    heartRateSum += hr
+                    heartRateSamples++
+                }
             }
         }
 
@@ -125,13 +149,14 @@ class RideSessionManager(
         rideTimerJob = scope.launch {
             while (_rideActive.value) {
                 _rideElapsedSeconds.value = ((System.currentTimeMillis() - rideStartTime) / 1000).toInt()
+                _powerHistory.value = _powerHistory.value + _ridePower.value
                 delay(1000)
             }
         }
     }
 
-    fun stopRide() {
-        if (!_rideActive.value) return
+    fun stopRide(workoutId: String? = null, workoutName: String? = null): RideSummary? {
+        if (!_rideActive.value) return null
         _rideActive.value = false
         rideTimerJob?.cancel()
         rideTimerJob = null
@@ -145,12 +170,13 @@ class RideSessionManager(
         bridge.stopWorkout()
 
         val elapsed = _rideElapsedSeconds.value
-        if (elapsed < 30) return // don't save rides shorter than 30s
+        if (elapsed < 30) return null // don't save rides shorter than 30s
 
         val avgPower = if (rideSampleCount > 0) (ridePowerSum / rideSampleCount).toInt() else 0
         val avgRpm = if (rideSampleCount > 0) (rideRpmSum / rideSampleCount).toInt() else 0
         val avgRes = if (rideSampleCount > 0) (rideResistanceSum / rideSampleCount).toInt() else 0
         val avgSpeed = if (elapsed > 0) _rideDistanceMiles.value / (elapsed / 3600f) else 0f
+        val avgHr = if (heartRateSamples > 0) (heartRateSum / heartRateSamples).toInt() else 0
 
         scope.launch {
             rideRepository.insert(
@@ -164,10 +190,23 @@ class RideSessionManager(
                     avgSpeedMph = avgSpeed,
                     distanceMiles = _rideDistanceMiles.value,
                     avgResistance = avgRes,
-                    avgHeartRate = _rideHeartRate.value,
+                    avgHeartRate = avgHr,
                 )
             )
         }
+
+        return RideSummary(
+            durationSeconds = elapsed,
+            calories = _rideCalories.value,
+            avgPower = avgPower,
+            maxPower = rideMaxPower,
+            avgRpm = avgRpm,
+            avgResistance = avgRes,
+            avgHeartRate = avgHr,
+            avgSpeedMph = avgSpeed,
+            distanceMiles = _rideDistanceMiles.value,
+            workoutName = workoutName,
+        )
     }
 
     private fun processSensorData(data: SensorData) {

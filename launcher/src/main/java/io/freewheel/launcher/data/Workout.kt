@@ -22,6 +22,34 @@ data class Workout(
     val color: String = "#22D3EE",
     val segments: List<WorkoutSegment>,
 ) {
+    companion object {
+        fun fromJson(json: String): Workout {
+            val obj = JSONObject(json)
+            val segArray = obj.getJSONArray("segments")
+            val segments = (0 until segArray.length()).map { i ->
+                val seg = segArray.getJSONObject(i)
+                WorkoutSegment(
+                    label = seg.getString("label"),
+                    durationSeconds = seg.getInt("durationSeconds"),
+                    resistance = seg.getInt("resistance"),
+                    message = seg.optString("message", ""),
+                )
+            }
+            return Workout(
+                id = obj.getString("id"),
+                name = obj.getString("name"),
+                description = obj.getString("description"),
+                durationMinutes = obj.getInt("durationMinutes"),
+                type = obj.getString("type"),
+                category = obj.optString("category", "General"),
+                coach = obj.getString("coach"),
+                optionalMedia = obj.optBoolean("optionalMedia", false),
+                color = obj.optString("color", "#22D3EE"),
+                segments = segments,
+            )
+        }
+    }
+
     fun toJson(): String {
         val obj = JSONObject()
         obj.put("id", id)

@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.*
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.freewheel.launcher.data.HomeTile
+import io.freewheel.launcher.data.RideSummary
+import io.freewheel.launcher.data.Workout
 import io.freewheel.launcher.overlay.HomeButtonOverlay
 import io.freewheel.launcher.ui.*
 import io.freewheel.launcher.update.UpdateStatus
@@ -76,6 +78,7 @@ class MainActivity : ComponentActivity() {
 private enum class Screen {
     SETUP, HOME, WORKOUT_PICKER, WORKOUT_DETAIL,
     SETTINGS, TASK_MANAGER, RIDE_HISTORY,
+    FREE_RIDE, WORKOUT_RIDE, RIDE_SUMMARY,
 }
 
 @Composable
@@ -111,12 +114,49 @@ fun LauncherApp(vm: LauncherViewModel) {
     val dimTimeoutMinutes by vm.dimTimeoutMinutes.collectAsState()
     val offTimeoutMinutes by vm.offTimeoutMinutes.collectAsState()
     val autoRestartBridge by vm.autoRestartBridge.collectAsState()
-    val defaultFitnessApp by vm.defaultFitnessApp.collectAsState()
 
     // Update availability
     val updateAvailableCount by vm.updateAvailableCount.collectAsState()
 
     var currentScreen by remember { mutableStateOf(Screen.HOME) }
+    var rideSummary by remember { mutableStateOf<RideSummary?>(null) }
+    var activeWorkout by remember { mutableStateOf<Workout?>(null) }
+
+    // Observe ride navigation events
+    val rideNavEvent by vm.rideNavigationEvent.collectAsState()
+    LaunchedEffect(rideNavEvent) {
+        when (val event = rideNavEvent) {
+            is RideNavigationEvent.FreeRide -> {
+                currentScreen = Screen.FREE_RIDE
+                vm.clearRideNavigationEvent()
+            }
+            is RideNavigationEvent.WorkoutRide -> {
+                activeWorkout = event.workout
+                currentScreen = Screen.WORKOUT_RIDE
+                vm.clearRideNavigationEvent()
+            }
+            is RideNavigationEvent.WorkoutWithMedia -> {
+                vm.clearRideNavigationEvent()
+                // No screen change — media app is in foreground with overlay
+            }
+            is RideNavigationEvent.ShowSummary -> {
+                rideSummary = event.summary
+                currentScreen = Screen.RIDE_SUMMARY
+                vm.clearRideNavigationEvent()
+            }
+            null -> {}
+        }
+    }
+
+    // Observe overlay summary (when returning from media app)
+    val overlaySummary by vm.lastOverlaySummary.collectAsState()
+    LaunchedEffect(overlaySummary) {
+        if (overlaySummary != null) {
+            rideSummary = overlaySummary
+            currentScreen = Screen.RIDE_SUMMARY
+            vm.clearOverlaySummary()
+        }
+    }
 
     // Show setup wizard on first run
     LaunchedEffect(setupComplete) {
@@ -244,9 +284,6 @@ fun LauncherApp(vm: LauncherViewModel) {
                 onTogglePin = { _, _ -> },
                 autoRestartBridge = autoRestartBridge,
                 onAutoRestartBridgeChange = { vm.setAutoRestartBridge(it) },
-                defaultFitnessApp = defaultFitnessApp,
-                fitnessApps = fitnessApps,
-                onDefaultFitnessAppChange = { vm.setDefaultFitnessApp(it) },
                 // Diagnostics
                 diagnosticsState = DiagnosticsState(
                     connected = bridgeConnected,
@@ -330,18 +367,74 @@ fun LauncherApp(vm: LauncherViewModel) {
                 selectedMedia = selectedMedia,
                 onMediaSelect = { vm.selectMedia(it) },
                 onStartWithMedia = {
-                    vm.startWorkoutRide()
-                    currentScreen = Screen.HOME
+                    vm.startWorkoutWithMedia()
+                    // No screen change — media app launches
                 },
                 onStartStatsOnly = {
                     vm.selectMedia(null)
-                    vm.startWorkoutRide()
-                    currentScreen = Screen.HOME
+                    vm.startWorkoutStatsOnly()
+                    // Screen change handled by rideNavigationEvent
                 },
                 onBack = { currentScreen = Screen.WORKOUT_PICKER },
                 ramUsedMb = ramUsed,
                 ramTotalMb = ramTotal,
                 currentTime = currentTime,
+            )
+        }
+
+        currentScreen == Screen.FREE_RIDE -> {
+            val power by vm.ridePower.collectAsState()
+            val rpm by vm.rideRpm.collectAsState()
+            val resistance by vm.rideResistance.collectAsState()
+            val calories by vm.rideCalories.collectAsState()
+            val elapsed by vm.rideElapsedSeconds.collectAsState()
+            val speed by vm.rideSpeedMph.collectAsState()
+            val distance by vm.rideDistanceMiles.collectAsState()
+            val hr by vm.rideHeartRate.collectAsState()
+            val connected by vm.bridgeConnected.collectAsState()
+
+            FreeRideScreen(
+                power = power, rpm = rpm, resistance = resistance,
+                calories = calories, elapsedSeconds = elapsed,
+                speedMph = speed, distanceMiles = distance,
+                heartRate = hr, isConnected = connected,
+                onStop = { vm.stopCurrentRide() },
+            )
+        }
+
+        currentScreen == Screen.WORKOUT_RIDE && activeWorkout != null -> {
+            val power by vm.ridePower.collectAsState()
+            val rpm by vm.rideRpm.collectAsState()
+            val resistance by vm.rideResistance.collectAsState()
+            val calories by vm.rideCalories.collectAsState()
+            val elapsed by vm.rideElapsedSeconds.collectAsState()
+            val speed by vm.rideSpeedMph.collectAsState()
+            val distance by vm.rideDistanceMiles.collectAsState()
+            val hr by vm.rideHeartRate.collectAsState()
+            val connected by vm.bridgeConnected.collectAsState()
+            val powerHist by vm.ridePowerHistory.collectAsState()
+
+            WorkoutRideScreen(
+                workout = activeWorkout!!,
+                power = power, rpm = rpm, resistance = resistance,
+                calories = calories, elapsedSeconds = elapsed,
+                speedMph = speed, distanceMiles = distance,
+                heartRate = hr, isConnected = connected,
+                powerHistory = powerHist,
+                ftp = 200, // TODO: get from fitness config
+                onEndRide = { vm.stopCurrentRide(activeWorkout?.id, activeWorkout?.name) },
+            )
+        }
+
+        currentScreen == Screen.RIDE_SUMMARY && rideSummary != null -> {
+            RideSummaryScreen(
+                summary = rideSummary!!,
+                onDone = {
+                    rideSummary = null
+                    activeWorkout = null
+                    vm.clearWorkoutSelection()
+                    currentScreen = Screen.HOME
+                },
             )
         }
 
@@ -362,7 +455,7 @@ fun LauncherApp(vm: LauncherViewModel) {
                 workoutCategoryCount = vm.getWorkouts().map { it.category }.distinct().size,
                 onTileClick = { tile ->
                     when (tile) {
-                        is HomeTile.StartRide -> vm.startRide()
+                        is HomeTile.StartRide -> vm.startFreeRide()
                         is HomeTile.App -> {
                             if (tile.isInstalled) vm.launchApp(tile.packageName)
                         }
@@ -385,8 +478,8 @@ fun LauncherApp(vm: LauncherViewModel) {
                 burnInOffsetX = burnInOffsetX,
                 burnInOffsetY = burnInOffsetY,
                 onBrowseWorkouts = { currentScreen = Screen.WORKOUT_PICKER },
-                onFreeRide = { vm.startRide() },
-                defaultFitnessAppLabel = fitnessApps.find { it.packageName == defaultFitnessApp }?.label ?: "Free Ride",
+                onFreeRide = { vm.startFreeRide() },
+                defaultFitnessAppLabel = "Free Ride",
                 onMediaClick = { currentScreen = Screen.WORKOUT_PICKER },
                 onHistoryClick = { currentScreen = Screen.RIDE_HISTORY },
                 updateAvailable = updateAvailableCount > 0,

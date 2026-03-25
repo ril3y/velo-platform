@@ -1,4 +1,4 @@
-package io.freewheel.freeride.ui
+package io.freewheel.launcher.ui
 
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -12,7 +12,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -25,24 +24,21 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import io.freewheel.freeride.RideViewModel
-import io.freewheel.freeride.ui.theme.*
+import io.freewheel.launcher.ui.theme.*
 
 @Composable
 fun FreeRideScreen(
-    vm: RideViewModel,
+    power: Int,
+    rpm: Int,
+    resistance: Int,
+    calories: Int,
+    elapsedSeconds: Int,
+    speedMph: Float,
+    distanceMiles: Float,
+    heartRate: Int,
+    isConnected: Boolean,
     onStop: () -> Unit,
 ) {
-    val power by vm.ridePower.collectAsState()
-    val rpm by vm.rideRpm.collectAsState()
-    val resistance by vm.rideResistance.collectAsState()
-    val calories by vm.rideCalories.collectAsState()
-    val elapsed by vm.rideElapsedSeconds.collectAsState()
-    val speed by vm.rideSpeedMph.collectAsState()
-    val distance by vm.rideDistanceMiles.collectAsState()
-    val heartRate by vm.rideHeartRate.collectAsState()
-    val connected by vm.rideConnected.collectAsState()
-
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -67,7 +63,7 @@ fun FreeRideScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             // Connection status — only show when not yet connected
-            if (!connected) {
+            if (!isConnected) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.padding(bottom = 12.dp),
@@ -102,7 +98,7 @@ fun FreeRideScreen(
                     modifier = Modifier.weight(1.4f),
                 ) {
                     Text(
-                        text = formatDuration(elapsed),
+                        text = formatDuration(elapsedSeconds),
                         style = MaterialTheme.typography.displayLarge.copy(
                             fontSize = 96.sp, lineHeight = 100.sp,
                             fontWeight = FontWeight.Bold, letterSpacing = 3.sp,
@@ -115,7 +111,7 @@ fun FreeRideScreen(
                     Spacer(Modifier.height(12.dp))
 
                     val progress by animateFloatAsState(
-                        targetValue = (elapsed / 60f / 30f).coerceAtMost(1f),
+                        targetValue = (elapsedSeconds / 60f / 30f).coerceAtMost(1f),
                         animationSpec = spring(stiffness = Spring.StiffnessLow),
                         label = "progress",
                     )
@@ -150,9 +146,9 @@ fun FreeRideScreen(
             ) {
                 SecondaryMetric("$calories", "CAL", SpeedOrange)
                 MetricDivider()
-                SecondaryMetric("%.1f".format(speed), "MPH", SpeedOrange)
+                SecondaryMetric("%.1f".format(speedMph), "MPH", SpeedOrange)
                 MetricDivider()
-                SecondaryMetric("%.1f".format(distance), "MI", NeonAccent)
+                SecondaryMetric("%.1f".format(distanceMiles), "MI", NeonAccent)
                 MetricDivider()
                 SecondaryMetric("LVL $resistance", "RES", ResistanceYellow)
                 MetricDivider()
