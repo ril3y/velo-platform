@@ -76,9 +76,10 @@ class ScreenSaverManager(
                 val idle = System.currentTimeMillis() - lastInteractionTime
                 when {
                     idle >= offTimeoutMs -> {
-                        if (!_screenOff.value) {
-                            setBrightness(0)
-                        }
+                        // Don't set system brightness to 0 — the Compose overlay
+                        // already covers the screen with an opaque black box.
+                        // Setting brightness=0 via Settings makes the device
+                        // unrecoverable if the overlay fails to render.
                         _screenOff.value = true
                         _screenDimmed.value = true
                     }

@@ -44,6 +44,11 @@ class MainActivity : ComponentActivity() {
         return super.dispatchTouchEvent(ev)
     }
 
+    override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent?): Boolean {
+        viewModelRef?.onUserInteraction()
+        return super.onKeyDown(keyCode, event)
+    }
+
     override fun onPause() {
         super.onPause()
         HomeButtonOverlay.show(this)
@@ -53,6 +58,13 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         hideSystemUI()
         HomeButtonOverlay.hide(this)
+        // Safety net: clear immersive mode in case overlay service crashed
+        // without calling restoreStatusBar()
+        try {
+            android.provider.Settings.Global.putString(
+                contentResolver, "policy_control", ""
+            )
+        } catch (_: Exception) {}
         viewModelRef?.loadApps()
     }
 
