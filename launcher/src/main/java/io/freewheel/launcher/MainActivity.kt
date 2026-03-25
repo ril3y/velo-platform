@@ -68,21 +68,10 @@ class MainActivity : ComponentActivity() {
         return super.onKeyDown(keyCode, event)
     }
 
-    override fun onPause() {
-        super.onPause()
-        // Always show the edge swipe zone — it's invisible and doesn't interfere with apps
-        // Use startForegroundService so it survives process kills
-        try {
-            startForegroundService(Intent(this, HomeButtonOverlay::class.java))
-        } catch (_: Exception) {
-            HomeButtonOverlay.show(this)
-        }
-    }
-
     override fun onResume() {
         super.onResume()
         hideSystemUI()
-        HomeButtonOverlay.hide(this)
+        // Don't stop HomeButtonOverlay — it's invisible and should always run
         // Safety net: clear immersive mode in case overlay service crashed
         // without calling restoreStatusBar()
         try {
