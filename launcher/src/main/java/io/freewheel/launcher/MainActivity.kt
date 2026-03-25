@@ -42,6 +42,13 @@ class MainActivity : ComponentActivity() {
             android.provider.Settings.System.putInt(contentResolver, "screen_off_timeout", 2147483647) // Screen never times out
         } catch (_: Exception) {}
 
+        // Always ensure the bottom-edge swipe gesture zone is running.
+        // This survives app reinstalls and process kills — the user should
+        // never get stuck in a fullscreen app with no way home.
+        try {
+            startForegroundService(Intent(this, HomeButtonOverlay::class.java))
+        } catch (_: Exception) {}
+
         setContent {
             VeloLauncherTheme {
                 val vm: LauncherViewModel = viewModel()
