@@ -2,7 +2,9 @@ package io.freewheel.launcher.update
 
 import android.app.Application
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.util.Log
 import androidx.core.content.FileProvider
 import io.freewheel.launcher.BuildConfig
 import kotlinx.coroutines.CoroutineScope
@@ -20,6 +22,15 @@ import java.net.URL
 enum class UpdateStatus {
     IDLE, CHECKING, UP_TO_DATE, AVAILABLE, DOWNLOADING, READY, ERROR
 }
+
+data class AppUpdate(
+    val name: String,
+    val url: String,
+    val label: String,
+    val packageName: String,
+    val installedVersion: String?,
+    val remoteVersion: String,
+)
 
 class UpdateManager(
     private val application: Application,
@@ -39,6 +50,9 @@ class UpdateManager(
     private val _downloadProgress = MutableStateFlow(0f)
     val downloadProgress: StateFlow<Float> = _downloadProgress.asStateFlow()
 
+    private val _availableUpdates = MutableStateFlow<List<AppUpdate>>(emptyList())
+    val availableUpdates: StateFlow<List<AppUpdate>> = _availableUpdates.asStateFlow()
+
     private var apkDownloadUrl: String? = null
     private var downloadedApk: File? = null
 
@@ -48,31 +62,79 @@ class UpdateManager(
     private val owner: String get() = prefs.getString("update_repo_owner", defaultOwner) ?: defaultOwner
     private val repo: String get() = prefs.getString("update_repo", defaultRepo) ?: defaultRepo
 
+    companion object {
+        private const val TAG = "UpdateManager"
+        private const val PREF_LAST_UPDATE_CHECK = "last_update_check"
+        private const val CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000L // 24 hours
+
+        /** Maps APK filename prefix (label) to Android package name for all monorepo apps. */
+        private val LABEL_TO_PACKAGE = mapOf(
+            "launcher" to "io.freewheel.launcher",
+            "freeride" to "io.freewheel.freeride",
+            "freewheelbridge" to "io.freewheel.bridge",
+        )
+    }
+
+    /**
+     * Checks if an update check is due (more than 24 hours since last check, or never checked).
+     * If due, automatically calls [checkForUpdate] and records the timestamp.
+     */
+    fun checkIfDue() {
+        val lastCheck = prefs.getLong(PREF_LAST_UPDATE_CHECK, 0L)
+        val now = System.currentTimeMillis()
+        if (now - lastCheck >= CHECK_INTERVAL_MS) {
+            checkForUpdate()
+            prefs.edit().putLong(PREF_LAST_UPDATE_CHECK, now).apply()
+        }
+    }
+
     fun checkForUpdate() {
         if (_status.value == UpdateStatus.CHECKING || _status.value == UpdateStatus.DOWNLOADING) return
 
         _status.value = UpdateStatus.CHECKING
         scope.launch {
             try {
-                val (version, changelog, apkUrl) = withContext(Dispatchers.IO) {
+                val release = withContext(Dispatchers.IO) {
                     fetchLatestRelease()
                 }
 
-                _latestVersion.value = version
-                _changelog.value = changelog
-                apkDownloadUrl = apkUrl
+                _latestVersion.value = release.version
+                _changelog.value = release.changelog
 
-                if (isNewer(version, BuildConfig.VERSION_NAME)) {
+                // Check each APK against the installed version of its target package.
+                // Only include updates for apps that are installed AND outdated.
+                val pm = application.packageManager
+                val updatable = release.updates.mapNotNull { update ->
+                    val pkg = update.packageName
+                    val installedVersion = try {
+                        pm.getPackageInfo(pkg, 0).versionName
+                    } catch (_: PackageManager.NameNotFoundException) {
+                        null  // App not installed — skip
+                    }
+                    if (installedVersion != null && isNewer(update.remoteVersion, installedVersion)) {
+                        update.copy(installedVersion = installedVersion)
+                    } else null
+                }
+
+                // Keep first APK URL for legacy single-download path
+                apkDownloadUrl = updatable.firstOrNull()?.url
+
+                if (updatable.isNotEmpty()) {
+                    _availableUpdates.value = updatable
                     _status.value = UpdateStatus.AVAILABLE
+                    Log.i(TAG, "Updates available: ${updatable.map { "${it.label} ${it.installedVersion} → ${it.remoteVersion}" }}")
                 } else {
+                    _availableUpdates.value = emptyList()
                     _status.value = UpdateStatus.UP_TO_DATE
                 }
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                Log.e(TAG, "Update check failed", e)
                 _status.value = UpdateStatus.ERROR
             }
         }
     }
 
+    /** Download the first available update (legacy single-APK path). */
     fun downloadUpdate() {
         val url = apkDownloadUrl ?: return
         if (_status.value == UpdateStatus.DOWNLOADING) return
@@ -83,7 +145,7 @@ class UpdateManager(
         scope.launch {
             try {
                 val apkFile = withContext(Dispatchers.IO) {
-                    downloadApk(url)
+                    downloadApk(url, "update.apk")
                 }
                 downloadedApk = apkFile
                 _status.value = UpdateStatus.READY
@@ -93,13 +155,39 @@ class UpdateManager(
         }
     }
 
+    /** Download a specific APK from the available updates list. */
+    fun downloadUpdate(appUpdate: AppUpdate) {
+        if (_status.value == UpdateStatus.DOWNLOADING) return
+
+        _status.value = UpdateStatus.DOWNLOADING
+        _downloadProgress.value = 0f
+
+        scope.launch {
+            try {
+                val filename = "${appUpdate.label}-update.apk"
+                val apkFile = withContext(Dispatchers.IO) {
+                    downloadApk(appUpdate.url, filename)
+                }
+                downloadedApk = apkFile
+                _status.value = UpdateStatus.READY
+            } catch (_: Exception) {
+                _status.value = UpdateStatus.ERROR
+            }
+        }
+    }
+
+    /** Install the most recently downloaded APK. */
     fun installUpdate() {
         val apk = downloadedApk ?: return
+        installUpdate(apk)
+    }
 
+    /** Install any downloaded APK file. */
+    fun installUpdate(apkFile: File) {
         val uri: Uri = FileProvider.getUriForFile(
             application,
             "${BuildConfig.APPLICATION_ID}.fileprovider",
-            apk,
+            apkFile,
         )
 
         val intent = Intent(Intent.ACTION_VIEW).apply {
@@ -111,7 +199,13 @@ class UpdateManager(
         application.startActivity(intent)
     }
 
-    private fun fetchLatestRelease(): Triple<String, String, String?> {
+    private data class ReleaseInfo(
+        val version: String,
+        val changelog: String,
+        val updates: List<AppUpdate>,
+    )
+
+    private fun fetchLatestRelease(): ReleaseInfo {
         val apiUrl = "https://api.github.com/repos/$owner/$repo/releases/latest"
         val conn = URL(apiUrl).openConnection() as HttpURLConnection
         conn.apply {
@@ -132,28 +226,38 @@ class UpdateManager(
             val tagName = json.optString("tag_name", "").removePrefix("v")
             val body = json.optString("body", "")
 
-            var apkUrl: String? = null
+            val updates = mutableListOf<AppUpdate>()
             val assets = json.optJSONArray("assets")
             if (assets != null) {
                 for (i in 0 until assets.length()) {
                     val asset = assets.getJSONObject(i)
                     val name = asset.optString("name", "")
                     if (name.endsWith(".apk")) {
-                        apkUrl = asset.optString("browser_download_url")
-                        break
+                        val url = asset.optString("browser_download_url")
+                        // Derive label from filename: "launcher-1.0.0.apk" -> "launcher"
+                        val label = name.substringBefore("-").ifBlank { name.removeSuffix(".apk") }
+                        val packageName = LABEL_TO_PACKAGE[label] ?: "io.freewheel.$label"
+                        updates.add(AppUpdate(
+                            name = name,
+                            url = url,
+                            label = label,
+                            packageName = packageName,
+                            installedVersion = null, // filled in by checkForUpdate()
+                            remoteVersion = tagName,
+                        ))
                     }
                 }
             }
 
-            return Triple(tagName, body, apkUrl)
+            return ReleaseInfo(version = tagName, changelog = body, updates = updates)
         } finally {
             conn.disconnect()
         }
     }
 
-    private fun downloadApk(url: String): File {
+    private fun downloadApk(url: String, filename: String): File {
         val updatesDir = File(application.cacheDir, "updates").apply { mkdirs() }
-        val apkFile = File(updatesDir, "update.apk")
+        val apkFile = File(updatesDir, filename)
 
         val conn = URL(url).openConnection() as HttpURLConnection
         conn.apply {

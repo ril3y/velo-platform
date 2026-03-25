@@ -342,6 +342,7 @@ class VeloContentProvider : ContentProvider() {
             sqlDb.insert("rides", 0, cv)
         }
 
+        db.invalidationTracker.refreshVersionsAsync()
         context?.contentResolver?.notifyChange(URI_RIDES, null)
         return ContentUris.withAppendedId(URI_RIDES, id)
     }

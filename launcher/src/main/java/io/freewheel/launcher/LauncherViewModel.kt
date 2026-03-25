@@ -25,11 +25,13 @@ import io.freewheel.launcher.session.SessionState
 import io.freewheel.launcher.session.WorkoutAppRegistry
 import io.freewheel.launcher.system.ScreenSaverManager
 import io.freewheel.launcher.system.SystemMonitor
+import io.freewheel.launcher.update.AppUpdate
 import io.freewheel.launcher.update.UpdateManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -120,6 +122,12 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     private val _autoRestartOverlay = MutableStateFlow(prefs.getBoolean("auto_restart_overlay", true))
     val autoRestartOverlay: StateFlow<Boolean> = _autoRestartOverlay.asStateFlow()
 
+    // --- Exposed state: Default fitness app ---
+    private val _defaultFitnessApp = MutableStateFlow(
+        prefs.getString("default_fitness_app", "io.freewheel.freeride") ?: "io.freewheel.freeride"
+    )
+    val defaultFitnessApp: StateFlow<String> = _defaultFitnessApp.asStateFlow()
+
     // --- Exposed state: Task manager (delegated) ---
     val runningApps get() = taskRepository.runningApps
 
@@ -133,6 +141,10 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     val updateLatestVersion get() = updateManager.latestVersion
     val updateChangelog get() = updateManager.changelog
     val updateDownloadProgress get() = updateManager.downloadProgress
+    val availableUpdates get() = updateManager.availableUpdates
+    val updateAvailableCount: StateFlow<Int> = updateManager.availableUpdates
+        .map { it.size }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
     // --- Exposed state: User profile ---
     private val _setupComplete = MutableStateFlow<Boolean?>(null) // null = loading
@@ -158,6 +170,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         screenSaverManager.start()
         checkSetupComplete()
         workoutAppRegistry.start()
+        updateManager.checkIfDue()
     }
 
     // --- App operations ---
@@ -189,15 +202,20 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     // --- Ride operations ---
 
     fun startRide() {
-        // Launch FreeRide app directly — it handles its own bridge connection
-        val intent = Intent("io.freewheel.freeride.ACTION_START_RIDE").apply {
-            putExtra("free_ride", true)
+        val app = getApplication<Application>()
+        val pkg = _defaultFitnessApp.value
+        val launchIntent = app.packageManager.getLaunchIntentForPackage(pkg)?.apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        try {
-            getApplication<Application>().startActivity(intent)
-        } catch (_: Exception) {
-            // FreeRide not installed — fall back to internal session
+        if (launchIntent != null) {
+            try {
+                app.startActivity(launchIntent)
+            } catch (_: Exception) {
+                // App not launchable — fall back to internal session
+                rideSessionManager.startRide()
+            }
+        } else {
+            // App not installed — fall back to internal session
             rideSessionManager.startRide()
         }
     }
@@ -249,6 +267,11 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     fun setAutoRestartOverlay(enabled: Boolean) {
         _autoRestartOverlay.value = enabled
         prefs.edit().putBoolean("auto_restart_overlay", enabled).apply()
+    }
+
+    fun setDefaultFitnessApp(packageName: String) {
+        _defaultFitnessApp.value = packageName
+        prefs.edit().putString("default_fitness_app", packageName).apply()
     }
 
     fun getPinnedApps(): List<Pair<String, String>> {
@@ -339,6 +362,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     fun checkForUpdate() = updateManager.checkForUpdate()
     fun downloadUpdate() = updateManager.downloadUpdate()
+    fun downloadUpdate(appUpdate: AppUpdate) = updateManager.downloadUpdate(appUpdate)
     fun installUpdate() = updateManager.installUpdate()
 
     // --- Ride history ---

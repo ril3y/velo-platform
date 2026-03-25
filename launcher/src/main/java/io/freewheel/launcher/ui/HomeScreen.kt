@@ -93,8 +93,10 @@ fun HomeScreen(
     burnInOffsetY: Int = 0,
     onBrowseWorkouts: () -> Unit = {},
     onFreeRide: () -> Unit = {},
+    defaultFitnessAppLabel: String = "Free Ride",
     onMediaClick: () -> Unit = {},
     onHistoryClick: () -> Unit = {},
+    updateAvailable: Boolean = false,
 ) {
     var showAllApps by remember { mutableStateOf(false) }
     var longPressedTile: HomeTile.App? by remember { mutableStateOf(null) }
@@ -166,6 +168,7 @@ fun HomeScreen(
                 onOverlayClick = onOverlayClick,
                 onAllAppsClick = { showAllApps = true },
                 onTaskManagerClick = onTaskManagerClick,
+                updateAvailable = updateAvailable,
             )
 
             // Main content: 12-col grid approximation
@@ -180,6 +183,7 @@ fun HomeScreen(
                     lastRide = lastRide,
                     streakDays = streakDays,
                     todayRideMinutes = todayRideMinutes,
+                    defaultFitnessAppLabel = defaultFitnessAppLabel,
                     onBrowseWorkouts = onBrowseWorkouts,
                     onFreeRide = {
                         if (startRide != null) onTileClick(startRide) else onFreeRide()
@@ -278,6 +282,7 @@ private fun HeroWorkoutCard(
     lastRide: RideRecord?,
     streakDays: Int,
     todayRideMinutes: Int,
+    defaultFitnessAppLabel: String = "Free Ride",
     onBrowseWorkouts: () -> Unit,
     onFreeRide: () -> Unit,
     modifier: Modifier = Modifier,
@@ -523,7 +528,7 @@ private fun HeroWorkoutCard(
                             )
                         }
 
-                        // "Free Ride" — outlined with stronger border
+                        // Default fitness app — outlined with stronger border
                         OutlinedButton(
                             onClick = onFreeRide,
                             shape = RoundedCornerShape(16.dp),
@@ -534,7 +539,7 @@ private fun HeroWorkoutCard(
                             contentPadding = PaddingValues(horizontal = 24.dp, vertical = 16.dp),
                         ) {
                             Text(
-                                text = "Free Ride",
+                                text = defaultFitnessAppLabel,
                                 style = MaterialTheme.typography.bodyLarge.copy(
                                     fontWeight = FontWeight.Medium,
                                     fontSize = 16.sp,

@@ -8,6 +8,7 @@ import io.freewheel.launcher.data.AppInfo
 import io.freewheel.launcher.data.HomeTile
 import io.freewheel.launcher.data.TileCategory
 import kotlinx.coroutines.Dispatchers
+import io.freewheel.launcher.overlay.HomeButtonOverlay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -152,6 +153,7 @@ class AppRepository(private val application: Application) {
             }
         }
         application.startActivity(intent)
+        HomeButtonOverlay.show(application)
         trackLaunch(packageName)
     }
 

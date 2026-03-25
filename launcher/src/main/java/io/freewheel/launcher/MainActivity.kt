@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.*
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.freewheel.launcher.data.HomeTile
+import io.freewheel.launcher.overlay.HomeButtonOverlay
 import io.freewheel.launcher.ui.*
 import io.freewheel.launcher.update.UpdateStatus
 import io.freewheel.launcher.ui.theme.VeloLauncherTheme
@@ -44,6 +45,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         hideSystemUI()
+        HomeButtonOverlay.hide(this)
         viewModelRef?.loadApps()
     }
 
@@ -105,6 +107,10 @@ fun LauncherApp(vm: LauncherViewModel) {
     val offTimeoutMinutes by vm.offTimeoutMinutes.collectAsState()
     val autoRestartBridge by vm.autoRestartBridge.collectAsState()
     val autoRestartOverlay by vm.autoRestartOverlay.collectAsState()
+    val defaultFitnessApp by vm.defaultFitnessApp.collectAsState()
+
+    // Update availability
+    val updateAvailableCount by vm.updateAvailableCount.collectAsState()
 
     var currentScreen by remember { mutableStateOf(Screen.HOME) }
 
@@ -174,6 +180,7 @@ fun LauncherApp(vm: LauncherViewModel) {
             val updateLatestVersion by vm.updateLatestVersion.collectAsState()
             val updateChangelog by vm.updateChangelog.collectAsState()
             val updateDownloadProgress by vm.updateDownloadProgress.collectAsState()
+            val availableUpdates by vm.availableUpdates.collectAsState()
 
             SettingsScreen(
                 serviceStatus = serviceStatus,
@@ -205,6 +212,9 @@ fun LauncherApp(vm: LauncherViewModel) {
                 autoRestartOverlay = autoRestartOverlay,
                 onAutoRestartBridgeChange = { vm.setAutoRestartBridge(it) },
                 onAutoRestartOverlayChange = { vm.setAutoRestartOverlay(it) },
+                defaultFitnessApp = defaultFitnessApp,
+                fitnessApps = fitnessApps,
+                onDefaultFitnessAppChange = { vm.setDefaultFitnessApp(it) },
                 updateStatus = updateStatusVal,
                 updateLatestVersion = updateLatestVersion,
                 updateChangelog = updateChangelog,
@@ -212,6 +222,8 @@ fun LauncherApp(vm: LauncherViewModel) {
                 onCheckForUpdate = { vm.checkForUpdate() },
                 onDownloadUpdate = { vm.downloadUpdate() },
                 onInstallUpdate = { vm.installUpdate() },
+                availableUpdates = availableUpdates,
+                onDownloadAppUpdate = { vm.downloadUpdate(it) },
             )
         }
 
@@ -297,8 +309,10 @@ fun LauncherApp(vm: LauncherViewModel) {
                 burnInOffsetY = burnInOffsetY,
                 onBrowseWorkouts = { currentScreen = Screen.WORKOUT_PICKER },
                 onFreeRide = { vm.startRide() },
+                defaultFitnessAppLabel = fitnessApps.find { it.packageName == defaultFitnessApp }?.label ?: "Free Ride",
                 onMediaClick = { currentScreen = Screen.WORKOUT_PICKER },
                 onHistoryClick = { currentScreen = Screen.RIDE_HISTORY },
+                updateAvailable = updateAvailableCount > 0,
             )
         }
     }

@@ -44,6 +44,7 @@ fun StatusBar(
     onOverlayClick: () -> Unit,
     onAllAppsClick: () -> Unit = {},
     onTaskManagerClick: () -> Unit = {},
+    updateAvailable: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val timeFormat = SimpleDateFormat("h:mm a", Locale.US)
@@ -125,17 +126,29 @@ fun StatusBar(
             )
         }
 
-        // Settings gear
-        IconButton(
-            onClick = onSettingsClick,
-            modifier = Modifier.size(44.dp),
-        ) {
-            Icon(
-                imageVector = Icons.Default.Settings,
-                contentDescription = "Settings",
-                tint = TextSecondary,
-                modifier = Modifier.size(24.dp),
-            )
+        // Settings gear with update badge
+        Box {
+            IconButton(
+                onClick = onSettingsClick,
+                modifier = Modifier.size(44.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Settings,
+                    contentDescription = "Settings",
+                    tint = TextSecondary,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+            if (updateAvailable) {
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .align(Alignment.TopEnd)
+                        .offset(x = (-6).dp, y = 6.dp)
+                        .clip(CircleShape)
+                        .background(NeonAccent),
+                )
+            }
         }
     }
 }

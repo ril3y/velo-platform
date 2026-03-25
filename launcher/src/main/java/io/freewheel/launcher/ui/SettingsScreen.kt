@@ -20,7 +20,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.freewheel.launcher.BuildConfig
+import io.freewheel.launcher.data.AppInfo
 import io.freewheel.launcher.service.ServiceStatus
+import io.freewheel.launcher.update.AppUpdate
 import io.freewheel.launcher.update.UpdateStatus
 import io.freewheel.launcher.ui.theme.*
 
@@ -55,6 +57,10 @@ fun SettingsScreen(
     autoRestartOverlay: Boolean = true,
     onAutoRestartBridgeChange: (Boolean) -> Unit = {},
     onAutoRestartOverlayChange: (Boolean) -> Unit = {},
+    // Default fitness app
+    defaultFitnessApp: String = "io.freewheel.freeride",
+    fitnessApps: List<AppInfo> = emptyList(),
+    onDefaultFitnessAppChange: (String) -> Unit = {},
     // Diagnostics
     diagnosticsState: DiagnosticsState = DiagnosticsState(),
     onToggleRawMonitor: (Boolean) -> Unit = {},
@@ -76,6 +82,8 @@ fun SettingsScreen(
     onCheckForUpdate: () -> Unit = {},
     onDownloadUpdate: () -> Unit = {},
     onInstallUpdate: () -> Unit = {},
+    availableUpdates: List<AppUpdate> = emptyList(),
+    onDownloadAppUpdate: (AppUpdate) -> Unit = {},
 ) {
     var selectedCategory by remember { mutableStateOf(SettingsCategory.SERVICES) }
 
@@ -180,6 +188,15 @@ fun SettingsScreen(
                     }
                     SettingsCategory.RIDE_DATA -> {
                         PaneTitle("Ride Data")
+
+                        // Default fitness app picker
+                        FitnessAppPicker(
+                            selectedPackage = defaultFitnessApp,
+                            fitnessApps = fitnessApps,
+                            onSelect = onDefaultFitnessAppChange,
+                        )
+
+                        Spacer(Modifier.height(8.dp))
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
@@ -332,12 +349,56 @@ fun SettingsScreen(
                                     if (updateChangelog.isNotBlank()) {
                                         Text(updateChangelog, color = TextSecondary, style = MaterialTheme.typography.bodySmall)
                                     }
-                                    Button(
-                                        onClick = onDownloadUpdate,
-                                        colors = ButtonDefaults.buttonColors(containerColor = NeonAccent),
-                                        modifier = Modifier.height(48.dp),
-                                    ) {
-                                        Text("Download Update", color = DarkBackground, fontWeight = FontWeight.Bold)
+
+                                    if (availableUpdates.size <= 1) {
+                                        // Single APK — use the legacy download path
+                                        Button(
+                                            onClick = onDownloadUpdate,
+                                            colors = ButtonDefaults.buttonColors(containerColor = NeonAccent),
+                                            modifier = Modifier.height(48.dp),
+                                        ) {
+                                            Text("Download Update", color = DarkBackground, fontWeight = FontWeight.Bold)
+                                        }
+                                    } else {
+                                        // Multiple APKs — show each with its own download button
+                                        Text(
+                                            "${availableUpdates.size} packages available:",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = TextSecondary,
+                                        )
+                                        for (update in availableUpdates) {
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .background(DarkBackground.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
+                                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                            ) {
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(
+                                                        update.label.replaceFirstChar { it.uppercase() },
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                        color = TextPrimary,
+                                                        fontWeight = FontWeight.Medium,
+                                                    )
+                                                    Text(
+                                                        update.name,
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = TextMuted,
+                                                    )
+                                                }
+                                                Button(
+                                                    onClick = { onDownloadAppUpdate(update) },
+                                                    colors = ButtonDefaults.buttonColors(containerColor = NeonAccent),
+                                                    modifier = Modifier.height(36.dp),
+                                                    contentPadding = PaddingValues(horizontal = 16.dp),
+                                                ) {
+                                                    Text("Download", color = DarkBackground, fontWeight = FontWeight.Bold,
+                                                        style = MaterialTheme.typography.bodySmall)
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -520,6 +581,63 @@ private fun DropdownSettingRow(
                             expanded = false
                         },
                     )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FitnessAppPicker(
+    selectedPackage: String,
+    fitnessApps: List<AppInfo>,
+    onSelect: (String) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val selectedLabel = fitnessApps.find { it.packageName == selectedPackage }?.label
+        ?: selectedPackage.substringAfterLast('.')
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text("Default Fitness App", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+        Box {
+            OutlinedButton(
+                onClick = { expanded = true },
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary),
+            ) {
+                Text(selectedLabel)
+            }
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                modifier = Modifier.background(SurfaceBright),
+            ) {
+                if (fitnessApps.isEmpty()) {
+                    DropdownMenuItem(
+                        text = { Text("No fitness apps installed", color = TextMuted) },
+                        onClick = { expanded = false },
+                    )
+                } else {
+                    for (app in fitnessApps) {
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    app.label,
+                                    color = if (app.packageName == selectedPackage) NeonAccent else TextPrimary,
+                                    fontWeight = if (app.packageName == selectedPackage) FontWeight.SemiBold else FontWeight.Normal,
+                                )
+                            },
+                            onClick = {
+                                onSelect(app.packageName)
+                                expanded = false
+                            },
+                        )
+                    }
                 }
             }
         }

@@ -83,5 +83,10 @@
         <service
             android:name=".overlay.RideOverlayService"
             android:exported="false" />
+
+        <!-- Floating home button overlay (shown when apps are in foreground) -->
+        <service
+            android:name=".overlay.HomeButtonOverlay"
+            android:exported="false" />
     </application>
 </manifest>
