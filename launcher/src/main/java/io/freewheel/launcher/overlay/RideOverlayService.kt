@@ -899,17 +899,17 @@ class HillChartView(
             val top = valToY(segmentWatts[i])
 
             barPaint.color = when {
-                i == currentIndex -> Color.parseColor("#3322D3EE")
-                i < currentIndex -> Color.parseColor("#2222D3EE")
-                else -> Color.parseColor("#1A2A2D40")
+                i == currentIndex -> Color.parseColor("#4422D3EE")  // current: bright cyan fill
+                i < currentIndex -> Color.parseColor("#2222D3EE")   // past: dim cyan
+                else -> Color.parseColor("#3322D3EE")               // future: visible cyan tint
             }
             canvas.drawRect(xOff, top, xOff + segW, h, barPaint)
 
             // Outline
             barPaint.color = when {
-                i == currentIndex -> Color.parseColor("#9922D3EE")
-                i < currentIndex -> Color.parseColor("#5522D3EE")
-                else -> Color.parseColor("#332A2D40")
+                i == currentIndex -> Color.parseColor("#AA22D3EE")  // current: strong outline
+                i < currentIndex -> Color.parseColor("#5522D3EE")   // past: dim outline
+                else -> Color.parseColor("#6622D3EE")               // future: visible outline
             }
             barPaint.style = Paint.Style.STROKE
             barPaint.strokeWidth = 1f * dp
