@@ -30,6 +30,11 @@ class MainActivity : ComponentActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         hideSystemUI()
 
+        // Kiosk mode: keep WiFi alive always (this is a plugged-in bike, not a battery device)
+        try {
+            android.provider.Settings.Global.putInt(contentResolver, "wifi_sleep_policy", 0) // 0 = never sleep
+        } catch (_: Exception) {}
+
         setContent {
             VeloLauncherTheme {
                 val vm: LauncherViewModel = viewModel()
