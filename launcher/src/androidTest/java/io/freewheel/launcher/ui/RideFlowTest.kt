@@ -54,12 +54,25 @@ class RideFlowTest {
         workoutName = "Test Hill Climb",
     )
 
-    // ── FreeRideScreen tests ───────────────────────────────────────────
+    // ── WorkoutRideScreen free ride mode tests ─────────────────────────
 
     @Test
-    fun freeRideScreen_displaysAllMetrics() {
+    fun workoutRideScreen_freeRideMode_displaysLargeStats() {
+        val freeRideWorkout = Workout(
+            id = "free-ride",
+            name = "Free Ride",
+            description = "Ride freely at your own pace",
+            durationMinutes = 0,
+            type = "free",
+            category = "Quick",
+            coach = "",
+            optionalMedia = true,
+            color = "#22D3EE",
+            segments = emptyList(),
+        )
         composeTestRule.setThemedContent {
-            FreeRideScreen(
+            WorkoutRideScreen(
+                workout = freeRideWorkout,
                 power = 150,
                 rpm = 80,
                 resistance = 12,
@@ -69,74 +82,27 @@ class RideFlowTest {
                 distanceMiles = 3.2f,
                 heartRate = 140,
                 isConnected = true,
-                onStop = {},
+                powerHistory = listOf(100, 120, 150),
+                ftp = 200,
+                onEndRide = {},
             )
         }
 
-        // Primary metrics
+        // Workout name shown in top bar
+        composeTestRule.onNodeWithText("Free Ride").assertIsDisplayed()
+        // Primary metrics visible
         composeTestRule.onNodeWithText("POWER").assertIsDisplayed()
         composeTestRule.onNodeWithText("CADENCE").assertIsDisplayed()
         composeTestRule.onNodeWithText("ELAPSED").assertIsDisplayed()
-
         // Secondary metrics
-        composeTestRule.onNodeWithText("200").assertIsDisplayed()        // calories
         composeTestRule.onNodeWithText("CAL").assertIsDisplayed()
-        composeTestRule.onNodeWithText("18.5").assertIsDisplayed()       // speed
         composeTestRule.onNodeWithText("MPH").assertIsDisplayed()
-        composeTestRule.onNodeWithText("3.2").assertIsDisplayed()        // distance
-        composeTestRule.onNodeWithText("MI").assertIsDisplayed()
-        composeTestRule.onNodeWithText("LVL 12").assertIsDisplayed()     // resistance
-        composeTestRule.onNodeWithText("RES").assertIsDisplayed()
-        composeTestRule.onNodeWithText("140").assertIsDisplayed()        // heart rate
         composeTestRule.onNodeWithText("BPM").assertIsDisplayed()
-
-        // Timer (05:00)
-        composeTestRule.onNodeWithText("05:00").assertIsDisplayed()
+        // End Ride button
+        composeTestRule.onNodeWithText("End Ride").assertIsDisplayed()
     }
 
-    @Test
-    fun freeRideScreen_stopButton_callsCallback() {
-        var stopClicked = false
-        composeTestRule.setThemedContent {
-            FreeRideScreen(
-                power = 100,
-                rpm = 70,
-                resistance = 8,
-                calories = 50,
-                elapsedSeconds = 60,
-                speedMph = 12.0f,
-                distanceMiles = 0.5f,
-                heartRate = 120,
-                isConnected = true,
-                onStop = { stopClicked = true },
-            )
-        }
-
-        composeTestRule.onNodeWithText("END WORKOUT").performClick()
-        assertTrue("onStop callback should have been invoked", stopClicked)
-    }
-
-    @Test
-    fun freeRideScreen_disconnected_showsStatus() {
-        composeTestRule.setThemedContent {
-            FreeRideScreen(
-                power = 0,
-                rpm = 0,
-                resistance = 0,
-                calories = 0,
-                elapsedSeconds = 0,
-                speedMph = 0f,
-                distanceMiles = 0f,
-                heartRate = 0,
-                isConnected = false,
-                onStop = {},
-            )
-        }
-
-        composeTestRule.onNodeWithText("CONNECTING...").assertIsDisplayed()
-    }
-
-    // ── WorkoutRideScreen tests ────────────────────────────────────────
+    // ── WorkoutRideScreen structured tests ─────────────────────────────
 
     @Test
     fun workoutRideScreen_displaysWorkoutName() {

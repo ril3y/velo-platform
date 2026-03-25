@@ -19,7 +19,6 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -94,8 +93,6 @@ fun HomeScreen(
     burnInOffsetX: Int = 0,
     burnInOffsetY: Int = 0,
     onBrowseWorkouts: () -> Unit = {},
-    onFreeRide: () -> Unit = {},
-    defaultFitnessAppLabel: String = "Free Ride",
     onMediaClick: () -> Unit = {},
     onHistoryClick: () -> Unit = {},
     updateAvailable: Boolean = false,
@@ -177,11 +174,7 @@ fun HomeScreen(
                     lastRide = lastRide,
                     streakDays = streakDays,
                     todayRideMinutes = todayRideMinutes,
-                    defaultFitnessAppLabel = defaultFitnessAppLabel,
                     onBrowseWorkouts = onBrowseWorkouts,
-                    onFreeRide = {
-                        if (startRide != null) onTileClick(startRide) else onFreeRide()
-                    },
                     modifier = Modifier
                         .weight(0.58f)
                         .fillMaxHeight(),
@@ -276,9 +269,7 @@ private fun HeroWorkoutCard(
     lastRide: RideRecord?,
     streakDays: Int,
     todayRideMinutes: Int,
-    defaultFitnessAppLabel: String = "Free Ride",
     onBrowseWorkouts: () -> Unit,
-    onFreeRide: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val cardShape = RoundedCornerShape(32.dp)
@@ -474,7 +465,7 @@ private fun HeroWorkoutCard(
                     Spacer(Modifier.height(12.dp))
 
                     Text(
-                        text = "Pick a structured workout, start a free ride, or pair media with a ride overlay.",
+                        text = "Pick a structured workout, free ride, or pair media with a ride overlay.",
                         style = MaterialTheme.typography.bodyLarge.copy(
                             fontSize = 16.sp,
                             lineHeight = 24.sp,
@@ -484,68 +475,42 @@ private fun HeroWorkoutCard(
 
                     Spacer(Modifier.height(24.dp))
 
-                    // Buttons row
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        // "Browse Workouts" — cyan solid button with glow
-                        Button(
-                            onClick = onBrowseWorkouts,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Cyan300,
-                                contentColor = Color(0xFF0F172A),
-                            ),
-                            shape = RoundedCornerShape(16.dp),
-                            contentPadding = PaddingValues(horizontal = 24.dp, vertical = 16.dp),
-                            elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
-                            modifier = Modifier
-                                .testTag("btn_browse_workouts")
-                                .semantics { contentDescription = "Browse Workouts" }
-                                .drawBehind {
-                                    // Button glow
-                                    drawCircle(
-                                        brush = Brush.radialGradient(
-                                            colors = listOf(
-                                                Cyan300.copy(alpha = 0.20f),
-                                                Color.Transparent,
-                                            ),
-                                            center = Offset(size.width / 2f, size.height / 2f),
-                                            radius = size.width * 0.7f,
+                    // Single CTA button
+                    Button(
+                        onClick = onBrowseWorkouts,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Cyan300,
+                            contentColor = Color(0xFF0F172A),
+                        ),
+                        shape = RoundedCornerShape(16.dp),
+                        contentPadding = PaddingValues(horizontal = 32.dp, vertical = 16.dp),
+                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
+                        modifier = Modifier
+                            .testTag("btn_browse_workouts")
+                            .semantics { contentDescription = "Start Workout" }
+                            .drawBehind {
+                                // Button glow
+                                drawCircle(
+                                    brush = Brush.radialGradient(
+                                        colors = listOf(
+                                            Cyan300.copy(alpha = 0.20f),
+                                            Color.Transparent,
                                         ),
-                                        radius = size.width * 0.7f,
                                         center = Offset(size.width / 2f, size.height / 2f),
-                                    )
-                                },
-                        ) {
-                            Text(
-                                text = "Browse Workouts",
-                                style = MaterialTheme.typography.bodyLarge.copy(
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 16.sp,
-                                ),
-                            )
-                        }
-
-                        // Default fitness app — outlined with stronger border
-                        OutlinedButton(
-                            onClick = onFreeRide,
-                            shape = RoundedCornerShape(16.dp),
-                            border = androidx.compose.foundation.BorderStroke(
-                                1.dp,
-                                Color.White.copy(alpha = 0.20f),
+                                        radius = size.width * 0.7f,
+                                    ),
+                                    radius = size.width * 0.7f,
+                                    center = Offset(size.width / 2f, size.height / 2f),
+                                )
+                            },
+                    ) {
+                        Text(
+                            text = "Start Workout",
+                            style = MaterialTheme.typography.bodyLarge.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 16.sp,
                             ),
-                            contentPadding = PaddingValues(horizontal = 24.dp, vertical = 16.dp),
-                            modifier = Modifier
-                                .testTag("btn_start_ride")
-                                .semantics { contentDescription = "Start Ride" },
-                        ) {
-                            Text(
-                                text = defaultFitnessAppLabel,
-                                style = MaterialTheme.typography.bodyLarge.copy(
-                                    fontWeight = FontWeight.Medium,
-                                    fontSize = 16.sp,
-                                ),
-                                color = Color.White,
-                            )
-                        }
+                        )
                     }
                 }
             }

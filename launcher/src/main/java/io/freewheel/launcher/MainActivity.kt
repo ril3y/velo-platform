@@ -102,7 +102,7 @@ class MainActivity : ComponentActivity() {
 private enum class Screen {
     SETUP, HOME, WORKOUT_PICKER, WORKOUT_DETAIL,
     SETTINGS, TASK_MANAGER, RIDE_HISTORY,
-    COUNTDOWN, FREE_RIDE, WORKOUT_RIDE, RIDE_SUMMARY,
+    COUNTDOWN, WORKOUT_RIDE, RIDE_SUMMARY,
 }
 
 @Composable
@@ -153,12 +153,6 @@ fun LauncherApp(vm: LauncherViewModel) {
     val rideNavEvent by vm.rideNavigationEvent.collectAsState()
     LaunchedEffect(rideNavEvent) {
         when (val event = rideNavEvent) {
-            is RideNavigationEvent.FreeRide -> {
-                countdownForMediaOverlay = false
-                postCountdownScreen = Screen.FREE_RIDE
-                currentScreen = Screen.COUNTDOWN
-                vm.clearRideNavigationEvent()
-            }
             is RideNavigationEvent.WorkoutRide -> {
                 activeWorkout = event.workout
                 countdownForMediaOverlay = false
@@ -437,26 +431,6 @@ fun LauncherApp(vm: LauncherViewModel) {
             )
         }
 
-        currentScreen == Screen.FREE_RIDE -> {
-            val power by vm.ridePower.collectAsState()
-            val rpm by vm.rideRpm.collectAsState()
-            val resistance by vm.rideResistance.collectAsState()
-            val calories by vm.rideCalories.collectAsState()
-            val elapsed by vm.rideElapsedSeconds.collectAsState()
-            val speed by vm.rideSpeedMph.collectAsState()
-            val distance by vm.rideDistanceMiles.collectAsState()
-            val hr by vm.rideHeartRate.collectAsState()
-            val connected by vm.bridgeConnected.collectAsState()
-
-            FreeRideScreen(
-                power = power, rpm = rpm, resistance = resistance,
-                calories = calories, elapsedSeconds = elapsed,
-                speedMph = speed, distanceMiles = distance,
-                heartRate = hr, isConnected = connected,
-                onStop = { vm.stopCurrentRide() },
-            )
-        }
-
         currentScreen == Screen.WORKOUT_RIDE && activeWorkout != null -> {
             val power by vm.ridePower.collectAsState()
             val rpm by vm.rideRpm.collectAsState()
@@ -535,7 +509,7 @@ fun LauncherApp(vm: LauncherViewModel) {
                 workoutCategoryCount = vm.getWorkouts().map { it.category }.distinct().size,
                 onTileClick = { tile ->
                     when (tile) {
-                        is HomeTile.StartRide -> vm.startFreeRide()
+                        is HomeTile.StartRide -> currentScreen = Screen.WORKOUT_PICKER
                         is HomeTile.App -> {
                             if (tile.isInstalled) vm.launchApp(tile.packageName)
                         }
@@ -558,8 +532,6 @@ fun LauncherApp(vm: LauncherViewModel) {
                 burnInOffsetX = burnInOffsetX,
                 burnInOffsetY = burnInOffsetY,
                 onBrowseWorkouts = { currentScreen = Screen.WORKOUT_PICKER },
-                onFreeRide = { vm.startFreeRide() },
-                defaultFitnessAppLabel = "Free Ride",
                 onMediaClick = { currentScreen = Screen.WORKOUT_PICKER },
                 onHistoryClick = { currentScreen = Screen.RIDE_HISTORY },
                 updateAvailable = updateAvailableCount > 0,

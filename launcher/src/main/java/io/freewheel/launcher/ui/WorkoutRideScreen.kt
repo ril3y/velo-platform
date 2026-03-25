@@ -119,7 +119,7 @@ fun WorkoutRideScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                "FreeRide",
+                workout.name,
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                 color = TextPrimary,
             )
@@ -149,154 +149,262 @@ fun WorkoutRideScreen(
             }
         }
 
-        // Left panels: stat grid + upcoming
-        Column(
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(start = 24.dp, top = 80.dp)
-                .width(320.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            // Stat grid
+        if (segments.isEmpty()) {
+            // ── Free ride mode: large stats filling the screen ──
             Column(
-                modifier = Modifier.fillMaxWidth().glassPanel().padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .fillMaxWidth()
+                    .padding(horizontal = 48.dp, vertical = 80.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(24.dp),
             ) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    StatTile("POWER", "$power", "W", PowerGreen, Modifier.weight(1f))
-                    StatTile("CADENCE", "$rpm", "RPM", CadenceBlue, Modifier.weight(1f))
-                }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    StatTile("RESISTANCE", "$resistance", "%", ResistanceYellow, Modifier.weight(1f))
-                    StatTile("HEART", if (heartRate > 0) "$heartRate" else "--", "BPM", HeartRateRed, Modifier.weight(1f))
-                }
-            }
-
-            // Upcoming segment
-            if (nextSegment != null) {
-                Column(
-                    modifier = Modifier.fillMaxWidth().glassPanel().padding(16.dp),
+                // Primary row: Power | Timer | Cadence
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("UPCOMING", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 1.5.sp, fontSize = 10.sp), color = CyanLabel.copy(alpha = 0.7f))
-                    Spacer(Modifier.height(8.dp))
-                    Text(nextSegment.label, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold, fontSize = 22.sp), color = TextPrimary)
-                    Spacer(Modifier.height(4.dp))
-                    Text("In ${formatDuration(secsUntilNext)} \u00B7 target resistance ${nextSegment.resistance}", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
-                    Spacer(Modifier.height(14.dp))
-                    WorkoutGraph(
-                        segments = segments,
-                        totalSeconds = segments.sumOf { it.durationSeconds },
-                        elapsedSeconds = elapsedSeconds,
-                        actualPower = powerHistory,
-                        ftp = ftp,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-            }
-        }
-
-        // Right: effort bar (power target from VeloFit API)
-        val scaledRes = ((currentSegment?.resistance ?: 0) * difficulty).toInt().coerceIn(1, 25)
-        val powerTarget = remember(scaledRes) { fitnessClient.getTargetPower(scaledRes) }
-        EffortBar(
-            actualPower = power,
-            powerTarget = powerTarget,
-            actualResistance = resistance,
-            modifier = Modifier.align(Alignment.CenterEnd).padding(end = 24.dp, top = 80.dp, bottom = 120.dp),
-        )
-
-        // Bottom bar
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .background(Color.Black.copy(alpha = 0.55f))
-                .padding(horizontal = 28.dp, vertical = 14.dp),
-        ) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-                Column(Modifier.weight(1f)) {
-                    Text("WORKOUT PROGRESS", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 1.5.sp, fontSize = 10.sp), color = CyanLabel.copy(alpha = 0.7f))
-                    Spacer(Modifier.height(4.dp))
-                    Text(workout.name, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold, fontSize = 20.sp), color = TextPrimary)
-                    Spacer(Modifier.height(2.dp))
-                    Text("${formatDuration(elapsedSeconds)} elapsed \u00B7 segment ${currentIdx + 1} of ${segments.size}", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
-
-                    val msg = currentSegment?.message
-                    if (!msg.isNullOrBlank()) {
-                        Spacer(Modifier.height(2.dp))
-                        Text(msg, style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, fontStyle = FontStyle.Italic), color = CyanLabel.copy(alpha = 0.85f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-
-                    Spacer(Modifier.height(10.dp))
-                    WorkoutGraph(
-                        segments = segments,
-                        totalSeconds = segments.sumOf { it.durationSeconds },
-                        elapsedSeconds = elapsedSeconds,
-                        actualPower = powerHistory,
-                        ftp = ftp,
-                        modifier = Modifier.fillMaxWidth(),
-                        compact = true,
-                    )
-                }
-                Spacer(Modifier.width(24.dp))
-                // Difficulty controls
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.padding(top = 4.dp),
-                ) {
-                    Text(
-                        "DIFFICULTY",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontWeight = FontWeight.SemiBold,
-                            letterSpacing = 1.5.sp,
-                            fontSize = 9.sp,
-                        ),
-                        color = TextSecondary,
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Button(
-                            onClick = { difficulty = (difficulty - 0.1f).coerceAtLeast(0.5f) },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.08f), contentColor = Color.White),
-                            shape = RoundedCornerShape(12.dp),
-                            contentPadding = PaddingValues(0.dp),
-                            modifier = Modifier.size(32.dp),
-                        ) {
-                            Text("\u2212", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                        }
+                    FreeRidePrimaryMetric(power, "W", "POWER", PowerGreen)
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
-                            "%.1fx".format(difficulty),
-                            style = MaterialTheme.typography.labelMedium.copy(
-                                fontWeight = FontWeight.Bold,
+                            text = formatDuration(elapsedSeconds),
+                            style = MaterialTheme.typography.displayLarge.copy(
+                                fontSize = 80.sp, lineHeight = 84.sp,
+                                fontWeight = FontWeight.Bold, letterSpacing = 2.sp,
                                 fontFamily = FontFamily.Monospace,
                             ),
-                            color = CyanLabel,
-                            modifier = Modifier.padding(horizontal = 8.dp),
+                            color = TextPrimary,
                         )
-                        Button(
-                            onClick = { difficulty = (difficulty + 0.1f).coerceAtMost(2.0f) },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.08f), contentColor = Color.White),
-                            shape = RoundedCornerShape(12.dp),
-                            contentPadding = PaddingValues(0.dp),
-                            modifier = Modifier.size(32.dp),
-                        ) {
-                            Text("+", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                        }
+                        Text("ELAPSED", style = MaterialTheme.typography.labelMedium.copy(fontSize = 14.sp), color = TextSecondary)
+                    }
+                    FreeRidePrimaryMetric(rpm, "RPM", "CADENCE", CadenceBlue)
+                }
+
+                // Secondary metrics bar
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .glassPanel()
+                        .padding(vertical = 16.dp, horizontal = 28.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    FreeRideSecondaryMetric("$calories", "CAL", SpeedOrange)
+                    FreeRideMetricDivider()
+                    FreeRideSecondaryMetric("%.1f".format(speedMph), "MPH", SpeedOrange)
+                    FreeRideMetricDivider()
+                    FreeRideSecondaryMetric("%.1f".format(distanceMiles), "MI", CyanLabel)
+                    FreeRideMetricDivider()
+                    FreeRideSecondaryMetric("LVL $resistance", "RES", ResistanceYellow)
+                    FreeRideMetricDivider()
+                    FreeRideSecondaryMetric(
+                        if (heartRate > 0) "$heartRate" else "--", "BPM",
+                        if (heartRate > 0) HeartRateRed else TextSecondary,
+                    )
+                }
+            }
+
+            // End Ride button at bottom
+            Button(
+                onClick = onEndRide,
+                colors = ButtonDefaults.buttonColors(containerColor = RoseButton, contentColor = Color.White),
+                shape = RoundedCornerShape(26.dp),
+                contentPadding = PaddingValues(horizontal = 36.dp, vertical = 14.dp),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 28.dp),
+            ) {
+                Text("End Ride", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold, letterSpacing = 1.sp))
+            }
+        } else {
+            // ── Structured workout mode: segments, hill chart, difficulty ──
+
+            // Left panels: stat grid + upcoming
+            Column(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(start = 24.dp, top = 80.dp)
+                    .width(320.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                // Stat grid
+                Column(
+                    modifier = Modifier.fillMaxWidth().glassPanel().padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        StatTile("POWER", "$power", "W", PowerGreen, Modifier.weight(1f))
+                        StatTile("CADENCE", "$rpm", "RPM", CadenceBlue, Modifier.weight(1f))
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        StatTile("RESISTANCE", "$resistance", "%", ResistanceYellow, Modifier.weight(1f))
+                        StatTile("HEART", if (heartRate > 0) "$heartRate" else "--", "BPM", HeartRateRed, Modifier.weight(1f))
                     }
                 }
-                Spacer(Modifier.width(16.dp))
-                Button(
-                    onClick = onEndRide,
-                    colors = ButtonDefaults.buttonColors(containerColor = RoseButton, contentColor = Color.White),
-                    shape = RoundedCornerShape(26.dp),
-                    contentPadding = PaddingValues(horizontal = 28.dp, vertical = 10.dp),
-                    modifier = Modifier.padding(top = 8.dp),
-                ) {
-                    Text("End Ride", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+
+                // Upcoming segment
+                if (nextSegment != null) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().glassPanel().padding(16.dp),
+                    ) {
+                        Text("UPCOMING", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 1.5.sp, fontSize = 10.sp), color = CyanLabel.copy(alpha = 0.7f))
+                        Spacer(Modifier.height(8.dp))
+                        Text(nextSegment.label, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold, fontSize = 22.sp), color = TextPrimary)
+                        Spacer(Modifier.height(4.dp))
+                        Text("In ${formatDuration(secsUntilNext)} \u00B7 target resistance ${nextSegment.resistance}", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                        Spacer(Modifier.height(14.dp))
+                        WorkoutGraph(
+                            segments = segments,
+                            totalSeconds = segments.sumOf { it.durationSeconds },
+                            elapsedSeconds = elapsedSeconds,
+                            actualPower = powerHistory,
+                            ftp = ftp,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+            }
+
+            // Right: effort bar (power target from VeloFit API)
+            val scaledRes = ((currentSegment?.resistance ?: 0) * difficulty).toInt().coerceIn(1, 25)
+            val powerTarget = remember(scaledRes) { fitnessClient.getTargetPower(scaledRes) }
+            EffortBar(
+                actualPower = power,
+                powerTarget = powerTarget,
+                actualResistance = resistance,
+                modifier = Modifier.align(Alignment.CenterEnd).padding(end = 24.dp, top = 80.dp, bottom = 120.dp),
+            )
+
+            // Bottom bar
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .background(Color.Black.copy(alpha = 0.55f))
+                    .padding(horizontal = 28.dp, vertical = 14.dp),
+            ) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                    Column(Modifier.weight(1f)) {
+                        Text("WORKOUT PROGRESS", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 1.5.sp, fontSize = 10.sp), color = CyanLabel.copy(alpha = 0.7f))
+                        Spacer(Modifier.height(4.dp))
+                        Text(workout.name, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold, fontSize = 20.sp), color = TextPrimary)
+                        Spacer(Modifier.height(2.dp))
+                        Text("${formatDuration(elapsedSeconds)} elapsed \u00B7 segment ${currentIdx + 1} of ${segments.size}", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+
+                        val msg = currentSegment?.message
+                        if (!msg.isNullOrBlank()) {
+                            Spacer(Modifier.height(2.dp))
+                            Text(msg, style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, fontStyle = FontStyle.Italic), color = CyanLabel.copy(alpha = 0.85f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+
+                        Spacer(Modifier.height(10.dp))
+                        WorkoutGraph(
+                            segments = segments,
+                            totalSeconds = segments.sumOf { it.durationSeconds },
+                            elapsedSeconds = elapsedSeconds,
+                            actualPower = powerHistory,
+                            ftp = ftp,
+                            modifier = Modifier.fillMaxWidth(),
+                            compact = true,
+                        )
+                    }
+                    Spacer(Modifier.width(24.dp))
+                    // Difficulty controls
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.padding(top = 4.dp),
+                    ) {
+                        Text(
+                            "DIFFICULTY",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                letterSpacing = 1.5.sp,
+                                fontSize = 9.sp,
+                            ),
+                            color = TextSecondary,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Button(
+                                onClick = { difficulty = (difficulty - 0.1f).coerceAtLeast(0.5f) },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.08f), contentColor = Color.White),
+                                shape = RoundedCornerShape(12.dp),
+                                contentPadding = PaddingValues(0.dp),
+                                modifier = Modifier.size(32.dp),
+                            ) {
+                                Text("\u2212", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Text(
+                                "%.1fx".format(difficulty),
+                                style = MaterialTheme.typography.labelMedium.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace,
+                                ),
+                                color = CyanLabel,
+                                modifier = Modifier.padding(horizontal = 8.dp),
+                            )
+                            Button(
+                                onClick = { difficulty = (difficulty + 0.1f).coerceAtMost(2.0f) },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.08f), contentColor = Color.White),
+                                shape = RoundedCornerShape(12.dp),
+                                contentPadding = PaddingValues(0.dp),
+                                modifier = Modifier.size(32.dp),
+                            ) {
+                                Text("+", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                    Spacer(Modifier.width(16.dp))
+                    Button(
+                        onClick = onEndRide,
+                        colors = ButtonDefaults.buttonColors(containerColor = RoseButton, contentColor = Color.White),
+                        shape = RoundedCornerShape(26.dp),
+                        contentPadding = PaddingValues(horizontal = 28.dp, vertical = 10.dp),
+                        modifier = Modifier.padding(top = 8.dp),
+                    ) {
+                        Text("End Ride", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+                    }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun FreeRidePrimaryMetric(value: Int, unit: String, label: String, color: Color) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            "$value",
+            style = MaterialTheme.typography.displayMedium.copy(
+                fontSize = 64.sp, lineHeight = 68.sp, fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+            ),
+            color = color,
+        )
+        Text(unit, style = MaterialTheme.typography.labelLarge.copy(fontSize = 18.sp), color = color.copy(alpha = 0.7f))
+        Text(label, style = MaterialTheme.typography.labelMedium.copy(fontSize = 14.sp), color = TextSecondary)
+    }
+}
+
+@Composable
+private fun FreeRideSecondaryMetric(value: String, label: String, color: Color) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            value,
+            style = MaterialTheme.typography.titleLarge.copy(
+                fontSize = 28.sp, letterSpacing = 1.sp, fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+            ),
+            color = color,
+        )
+        Text(label, style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp), color = TextSecondary)
+    }
+}
+
+@Composable
+private fun FreeRideMetricDivider() {
+    Box(modifier = Modifier.width(1.dp).height(28.dp).background(GlassBorder))
 }
 
 @Composable

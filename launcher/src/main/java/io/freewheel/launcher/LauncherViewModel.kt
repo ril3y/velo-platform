@@ -36,7 +36,6 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 sealed class RideNavigationEvent {
-    object FreeRide : RideNavigationEvent()
     object GoHome : RideNavigationEvent()
     data class WorkoutRide(val workout: Workout) : RideNavigationEvent()
     data class WorkoutWithMedia(val workout: Workout, val mediaPackage: String) : RideNavigationEvent()
@@ -211,12 +210,6 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     fun restartSerialBridge() = serviceMonitor.restartSerialBridge()
 
     // --- Ride operations ---
-
-    fun startFreeRide() {
-        _workoutRideActive.value = true
-        // Don't start ride yet — countdown shows first, ride starts via beginRide()
-        _rideNavigationEvent.value = RideNavigationEvent.FreeRide
-    }
 
     fun stopCurrentRide(workoutId: String? = null, workoutName: String? = null): io.freewheel.launcher.data.RideSummary? {
         _workoutRideActive.value = false

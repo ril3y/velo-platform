@@ -1,0 +1,12 @@
+{
+  "id": "free-ride",
+  "name": "Free Ride",
+  "description": "Ride freely at your own pace — no structured intervals.",
+  "durationMinutes": 0,
+  "type": "free",
+  "category": "Quick",
+  "coach": "",
+  "optionalMedia": true,
+  "color": "#22D3EE",
+  "segments": []
+}
