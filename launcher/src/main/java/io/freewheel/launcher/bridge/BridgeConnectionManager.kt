@@ -42,6 +42,12 @@ class BridgeConnectionManager(private val context: Context) {
     private val _firmwareStateName = MutableStateFlow("")
     val firmwareStateName: StateFlow<String> = _firmwareStateName.asStateFlow()
 
+    private val _firmwareVersion = MutableStateFlow<String?>(null)
+    val firmwareVersion: StateFlow<String?> = _firmwareVersion.asStateFlow()
+
+    private val _hardwareId = MutableStateFlow(-1)
+    val hardwareId: StateFlow<Int> = _hardwareId.asStateFlow()
+
     private val _heartRate = MutableStateFlow(0)
     val heartRate: StateFlow<Int> = _heartRate.asStateFlow()
 
@@ -95,6 +101,13 @@ class BridgeConnectionManager(private val context: Context) {
             _firmwareState.value = state
             _firmwareStateName.value = stateName
             broadcastFirmwareState(state, stateName)
+            // Re-query firmware version — it may not have been available at initial connect
+            if (_firmwareVersion.value == null) {
+                val ver = client.getFirmwareVersion()
+                if (ver != null) _firmwareVersion.value = ver
+                val hw = client.getHardwareId()
+                if (hw >= 0) _hardwareId.value = hw
+            }
         }
 
         override fun onConnectionChanged(connected: Boolean, message: String) {
@@ -119,6 +132,28 @@ class BridgeConnectionManager(private val context: Context) {
 
         override fun onServiceConnected() {
             _connected.value = true
+            // Query current firmware state — the change callback only fires on transitions,
+            // so if the bridge was already in a state before we connected, we'd miss it.
+            val fwState = client.getFirmwareState()
+            if (fwState >= 0) {
+                _firmwareState.value = fwState
+                _firmwareStateName.value = when (fwState) {
+                    0 -> "BOOT_FAILSAFE"; 1 -> "POWER_ON_0"; 2 -> "POWER_ON_1"
+                    3 -> "POWER_ON_2"; 4 -> "UPDATES"; 5 -> "TRANSITION"
+                    6 -> "MFG"; 7 -> "OTA"; 8 -> "SELECTION"; 9 -> "WORKOUT"
+                    10 -> "SLEEP"; 11 -> "RESET"; 12 -> "SBC_DISCONNECTED"
+                    else -> "UNKNOWN_$fwState"
+                }
+            }
+            // Query firmware version (parsed from SYSTEM_DATA response)
+            val fwVersion = client.getFirmwareVersion()
+            if (fwVersion != null) {
+                _firmwareVersion.value = fwVersion
+            }
+            val hwId = client.getHardwareId()
+            if (hwId >= 0) {
+                _hardwareId.value = hwId
+            }
         }
 
         override fun onServiceDisconnected() {

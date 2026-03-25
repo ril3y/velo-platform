@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.freewheel.launcher.BuildConfig
@@ -43,7 +44,6 @@ fun SettingsScreen(
     serviceStatus: ServiceStatus,
     onBack: () -> Unit,
     onRestartBridge: () -> Unit,
-    onRestartOverlay: () -> Unit,
     onExportRides: () -> Unit,
     onClearRides: () -> Unit,
     onOpenSystemSettings: () -> Unit,
@@ -54,9 +54,7 @@ fun SettingsScreen(
     pinnedApps: List<Pair<String, String>> = emptyList(),
     onTogglePin: (String, Boolean) -> Unit = { _, _ -> },
     autoRestartBridge: Boolean = true,
-    autoRestartOverlay: Boolean = true,
     onAutoRestartBridgeChange: (Boolean) -> Unit = {},
-    onAutoRestartOverlayChange: (Boolean) -> Unit = {},
     // Default fitness app
     defaultFitnessApp: String = "io.freewheel.freeride",
     fitnessApps: List<AppInfo> = emptyList(),
@@ -132,6 +130,7 @@ fun SettingsScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .testTag("settings_tab_${cat.name}")
                             .clickable { selectedCategory = cat }
                             .then(
                                 if (isSelected) Modifier.background(NeonAccent.copy(alpha = 0.1f))
@@ -155,6 +154,7 @@ fun SettingsScreen(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
+                    .testTag("settings_pane_${selectedCategory.name}")
                     .background(SurfaceBright, RoundedCornerShape(12.dp))
                     .padding(24.dp)
                     .verticalScroll(rememberScrollState()),
@@ -165,25 +165,14 @@ fun SettingsScreen(
                         PaneTitle("Services")
                         ServiceRow(
                             name = "FreewheelBridge (TCP:9999)",
-                            running = serviceStatus.serialBridgeRunning,
-                            detail = if (serviceStatus.serialBridgeTcpAlive) "TCP alive" else "TCP down",
+                            running = serviceStatus.serialBridgeRunning || serviceStatus.serialBridgeTcpAlive,
+                            detail = if (serviceStatus.serialBridgeTcpAlive) "Connected" else "Not responding",
                             onRestart = onRestartBridge,
                         )
                         ToggleRow(
                             label = "Auto-restart FreewheelBridge",
                             checked = autoRestartBridge,
                             onCheckedChange = onAutoRestartBridgeChange,
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        ServiceRow(
-                            name = "Jailbreak Overlay",
-                            running = serviceStatus.overlayRunning,
-                            onRestart = onRestartOverlay,
-                        )
-                        ToggleRow(
-                            label = "Auto-restart Overlay",
-                            checked = autoRestartOverlay,
-                            onCheckedChange = onAutoRestartOverlayChange,
                         )
                     }
                     SettingsCategory.RIDE_DATA -> {
@@ -347,7 +336,7 @@ fun SettingsScreen(
                                         fontWeight = FontWeight.Bold,
                                     )
                                     if (updateChangelog.isNotBlank()) {
-                                        Text(updateChangelog, color = TextSecondary, style = MaterialTheme.typography.bodySmall)
+                                        SimpleMarkdownText(updateChangelog)
                                     }
 
                                     if (availableUpdates.size <= 1) {
@@ -461,6 +450,56 @@ fun SettingsScreen(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SimpleMarkdownText(
+    markdown: String,
+    modifier: Modifier = Modifier,
+) {
+    val lines = markdown.lines()
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        for (line in lines) {
+            val trimmed = line.trim()
+            if (trimmed.isBlank()) continue
+            when {
+                trimmed.startsWith("## ") -> Text(
+                    trimmed.removePrefix("## "),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = TextPrimary,
+                    fontWeight = FontWeight.Bold,
+                )
+                trimmed.startsWith("# ") -> Text(
+                    trimmed.removePrefix("# "),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = TextPrimary,
+                    fontWeight = FontWeight.Bold,
+                )
+                trimmed.startsWith("- **") || trimmed.startsWith("* **") -> {
+                    val content = trimmed.removePrefix("- ").removePrefix("* ")
+                        .replace(Regex("\\*\\*(.+?)\\*\\*"), "$1")
+                    Text(
+                        "\u2022 $content",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary,
+                    )
+                }
+                trimmed.startsWith("- ") || trimmed.startsWith("* ") -> Text(
+                    "\u2022 ${trimmed.removePrefix("- ").removePrefix("* ")}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary,
+                )
+                trimmed.startsWith("|") -> {} // skip markdown tables
+                trimmed.startsWith("---") -> {} // skip horizontal rules
+                else -> Text(
+                    trimmed.replace(Regex("\\*\\*(.+?)\\*\\*"), "$1")
+                        .replace(Regex("`([^`]+)`"), "$1"),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary,
+                )
             }
         }
     }

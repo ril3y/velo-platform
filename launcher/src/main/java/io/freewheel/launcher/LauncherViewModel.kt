@@ -96,6 +96,8 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     val bridgeSensorData get() = bridgeConnectionManager.sensorData
     val bridgeFirmwareState get() = bridgeConnectionManager.firmwareState
     val bridgeFirmwareStateName get() = bridgeConnectionManager.firmwareStateName
+    val bridgeFirmwareVersion get() = bridgeConnectionManager.firmwareVersion
+    val bridgeHardwareId get() = bridgeConnectionManager.hardwareId
     val bridgeHeartRate get() = bridgeConnectionManager.heartRate
     val bridgeHrmDeviceName get() = bridgeConnectionManager.hrmDeviceName
     val bridgeWorkoutActive get() = bridgeConnectionManager.workoutActive
@@ -118,9 +120,6 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     // --- Exposed state: Settings (auto-restart) ---
     private val _autoRestartBridge = MutableStateFlow(prefs.getBoolean("auto_restart_bridge", true))
     val autoRestartBridge: StateFlow<Boolean> = _autoRestartBridge.asStateFlow()
-
-    private val _autoRestartOverlay = MutableStateFlow(prefs.getBoolean("auto_restart_overlay", true))
-    val autoRestartOverlay: StateFlow<Boolean> = _autoRestartOverlay.asStateFlow()
 
     // --- Exposed state: Default fitness app ---
     private val _defaultFitnessApp = MutableStateFlow(
@@ -197,8 +196,6 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     fun restartSerialBridge() = serviceMonitor.restartSerialBridge()
 
-    fun restartOverlay() = serviceMonitor.restartOverlay()
-
     // --- Ride operations ---
 
     fun startRide() {
@@ -262,11 +259,6 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     fun setAutoRestartBridge(enabled: Boolean) {
         _autoRestartBridge.value = enabled
         prefs.edit().putBoolean("auto_restart_bridge", enabled).apply()
-    }
-
-    fun setAutoRestartOverlay(enabled: Boolean) {
-        _autoRestartOverlay.value = enabled
-        prefs.edit().putBoolean("auto_restart_overlay", enabled).apply()
     }
 
     fun setDefaultFitnessApp(packageName: String) {

@@ -5,6 +5,7 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Intent;
+import android.os.Binder;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.RemoteCallbackList;
@@ -70,9 +71,13 @@ public class BridgeService extends Service {
     private final RemoteCallbackList<IBikeListener> bikeListeners = new RemoteCallbackList<>();
     private volatile boolean workoutActive = false;
     private volatile String sessionOwnerPkg = null;
+    private volatile int sessionOwnerUid = -1;
     private volatile long lastHeartbeatTime = 0;
     private Timer watchdogTimer;
     private volatile int currentFirmwareState = -1;
+    private volatile String ucbFirmwareVersion = null; // e.g. "R_5.87.5"
+    private volatile int ucbHardwareId = -1;
+    private volatile String ucbSerialNumber = null;
     private volatile boolean serialConnected = false;
     private volatile boolean workoutPending = false; // waiting for SELECTION state to start workout
 
@@ -107,6 +112,7 @@ public class BridgeService extends Service {
             synchronized (BridgeService.this) {
                 if (sessionOwnerPkg == null || sessionOwnerPkg.equals(packageName)) {
                     sessionOwnerPkg = packageName;
+                    sessionOwnerUid = Binder.getCallingUid();
                     lastHeartbeatTime = System.currentTimeMillis();
                     Log.d(TAG, "Session claimed by: " + packageName);
                     return true;
@@ -125,6 +131,7 @@ public class BridgeService extends Service {
                     doStopWorkout("session_released");
                 }
                 sessionOwnerPkg = null;
+                sessionOwnerUid = -1;
                 Log.d(TAG, "Session released by: " + pkg);
             }
         }
@@ -190,6 +197,16 @@ public class BridgeService extends Service {
         @Override
         public int getFirmwareState() {
             return currentFirmwareState;
+        }
+
+        @Override
+        public String getFirmwareVersion() {
+            return ucbFirmwareVersion;
+        }
+
+        @Override
+        public int getHardwareId() {
+            return ucbHardwareId;
         }
 
         @Override
@@ -259,9 +276,7 @@ public class BridgeService extends Service {
     };
 
     private boolean isCallerSessionOwner() {
-        // In a real implementation you'd check Binder.getCallingUid(), but for now
-        // we rely on the session claim mechanism
-        return sessionOwnerPkg != null;
+        return sessionOwnerPkg != null && Binder.getCallingUid() == sessionOwnerUid;
     }
 
     @Override
@@ -841,9 +856,43 @@ public class BridgeService extends Service {
             }
         }
 
-        // SYSTEM_DATA response — log it (JRNY uses this to confirm connection)
+        // SYSTEM_DATA response — parse hardware info and firmware version
         if (msgId == MSG_ID_SYSTEM_DATA && dataLen > 3) {
-            Log.d(TAG, "SYSTEM_DATA response: " + (dataLen - 3) + " bytes");
+            int payloadLen = dataLen - 3;
+            Log.d(TAG, "SYSTEM_DATA response: " + payloadLen + " bytes");
+            if (payloadLen >= 1) {
+                ucbHardwareId = decoded[3] & 0xFF;
+                Log.d(TAG, "SYSTEM_DATA hwId=" + ucbHardwareId);
+            }
+            // Extract ASCII content from payload — contains serial number and hardware info
+            if (payloadLen >= 10) {
+                StringBuilder ascii = new StringBuilder();
+                for (int i = 3; i < dataLen; i++) {
+                    byte b = decoded[i];
+                    if (b >= 32 && b < 127) ascii.append((char) b);
+                }
+                String content = ascii.toString().trim();
+                Log.d(TAG, "SYSTEM_DATA ascii: " + content);
+
+                // Extract serial number (pattern: digits + letters, 20+ chars)
+                java.util.regex.Matcher snMatcher = java.util.regex.Pattern
+                    .compile("[0-9A-Z]{15,}").matcher(content);
+                if (snMatcher.find()) {
+                    ucbSerialNumber = snMatcher.group();
+                    Log.i(TAG, "UCB serial: " + ucbSerialNumber);
+                }
+
+                // Look for explicit version pattern like "R_5.87.5" or "G_3.0.0"
+                java.util.regex.Matcher vMatcher = java.util.regex.Pattern
+                    .compile("[RG]_\\d+\\.\\d+\\.\\d+").matcher(content);
+                if (vMatcher.find()) {
+                    ucbFirmwareVersion = vMatcher.group();
+                } else if (ucbHardwareId > 0 && ucbHardwareId != 0xFF) {
+                    // Derive partial version from hardware ID convention: R_5.{hwId}.x
+                    ucbFirmwareVersion = "R_5." + ucbHardwareId + ".x";
+                }
+                Log.i(TAG, "UCB firmware version: " + ucbFirmwareVersion + " hwId=" + ucbHardwareId);
+            }
         }
 
         // CONNECT_SESSION_CNTRL (0x16) — UCB offers session accept/reject

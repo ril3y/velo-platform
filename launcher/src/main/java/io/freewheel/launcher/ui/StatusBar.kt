@@ -1,12 +1,6 @@
 package io.freewheel.launcher.ui
 
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -19,10 +13,11 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -41,7 +36,6 @@ fun StatusBar(
     currentTime: Long,
     onSettingsClick: () -> Unit,
     onBridgeClick: () -> Unit,
-    onOverlayClick: () -> Unit,
     onAllAppsClick: () -> Unit = {},
     onTaskManagerClick: () -> Unit = {},
     updateAvailable: Boolean = false,
@@ -103,7 +97,9 @@ fun StatusBar(
         // All Apps
         IconButton(
             onClick = onAllAppsClick,
-            modifier = Modifier.size(44.dp),
+            modifier = Modifier.size(44.dp)
+                .testTag("btn_all_apps")
+                .semantics { contentDescription = "All Apps" },
         ) {
             Icon(
                 imageVector = Icons.Default.Apps,
@@ -116,7 +112,9 @@ fun StatusBar(
         // Task Manager
         IconButton(
             onClick = onTaskManagerClick,
-            modifier = Modifier.size(44.dp),
+            modifier = Modifier.size(44.dp)
+                .testTag("btn_task_manager")
+                .semantics { contentDescription = "Task Manager" },
         ) {
             Icon(
                 imageVector = Icons.Default.Layers,
@@ -130,7 +128,9 @@ fun StatusBar(
         Box {
             IconButton(
                 onClick = onSettingsClick,
-                modifier = Modifier.size(44.dp),
+                modifier = Modifier.size(44.dp)
+                    .testTag("btn_settings")
+                    .semantics { contentDescription = "Settings" },
             ) {
                 Icon(
                     imageVector = Icons.Default.Settings,
@@ -150,35 +150,5 @@ fun StatusBar(
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun StatusDot(isHealthy: Boolean) {
-    if (isHealthy) {
-        val infiniteTransition = rememberInfiniteTransition(label = "statusPulse")
-        val pulseAlpha by infiniteTransition.animateFloat(
-            initialValue = 0.4f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(1500),
-                repeatMode = RepeatMode.Reverse,
-            ),
-            label = "pulseAlpha",
-        )
-        Box(
-            modifier = Modifier
-                .size(8.dp)
-                .clip(CircleShape)
-                .alpha(pulseAlpha)
-                .background(StatusGreen)
-        )
-    } else {
-        Box(
-            modifier = Modifier
-                .size(8.dp)
-                .clip(CircleShape)
-                .background(StatusRed)
-        )
     }
 }

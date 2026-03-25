@@ -20,6 +20,8 @@ interface IBikeService {
     boolean isWorkoutActive();
     String getSessionOwner();
     int getFirmwareState();
+    String getFirmwareVersion();
+    int getHardwareId();
 
     // Listener registration
     void registerListener(IBikeListener listener);

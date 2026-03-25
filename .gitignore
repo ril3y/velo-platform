@@ -11,5 +11,8 @@
 .cxx
 *.aab
 
+# Screenshots
+screen_*.png
+
 # Platform signing keys — NEVER commit these
 freewheelbridge/signing/

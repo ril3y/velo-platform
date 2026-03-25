@@ -2,6 +2,7 @@ package io.freewheel.launcher.ride
 
 import io.freewheel.launcher.bridge.BridgeConnectionManager
 import io.freewheel.launcher.data.RideRecord
+import io.freewheel.ucb.RidePhysics
 import io.freewheel.ucb.SensorData
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -176,8 +177,7 @@ class RideSessionManager(
         _rideResistance.value = data.resistanceLevel
 
         // Speed from power using simplified cycling power model
-        val speedMps = if (power > 0) Math.cbrt(power.toDouble() / 4.0) else 0.0
-        val currentSpeedMph = (speedMps * 2.24).toFloat().coerceAtMost(45f)
+        val currentSpeedMph = RidePhysics.speedMph(power)
         _rideSpeedMph.value = currentSpeedMph
 
         // Update distance incrementally
@@ -192,10 +192,10 @@ class RideSessionManager(
         rideSampleCount++
         if (power > rideMaxPower) rideMaxPower = power
 
-        // Calories: metabolic cost = power / 0.25, kcal = cost * hours / 1.163
+        // Calories from average power
         val elapsedHours = (now - rideStartTime) / 3_600_000.0
         val avgPower = if (rideSampleCount > 0) ridePowerSum.toDouble() / rideSampleCount else 0.0
-        _rideCalories.value = ((avgPower / 0.25) * elapsedHours / 1.163).toInt()
+        _rideCalories.value = RidePhysics.calories(avgPower, elapsedHours)
     }
 
     fun destroy() {

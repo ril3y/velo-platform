@@ -9,7 +9,6 @@ import kotlinx.coroutines.flow.flow
 data class ServiceStatus(
     val serialBridgeRunning: Boolean = false,
     val serialBridgeTcpAlive: Boolean = false,
-    val overlayRunning: Boolean = false,
 )
 
 class ServiceMonitor(private val context: Context) {
@@ -17,8 +16,6 @@ class ServiceMonitor(private val context: Context) {
     companion object {
         private const val SERIAL_BRIDGE_PKG = "io.freewheel.bridge"
         private const val SERIAL_BRIDGE_SERVICE = "io.freewheel.bridge.BridgeService"
-        private const val OVERLAY_PKG = "com.bowflex.jailbreak"
-        private const val OVERLAY_SERVICE = "com.bowflex.jailbreak.OverlayService"
         private const val POLL_INTERVAL_MS = 10_000L
     }
 
@@ -36,12 +33,10 @@ class ServiceMonitor(private val context: Context) {
         val services = am.getRunningServices(100)
 
         var bridgeRunning = false
-        var overlayRunning = false
 
         for (info in services) {
             val cls = info.service.className
             if (cls == SERIAL_BRIDGE_SERVICE) bridgeRunning = true
-            if (cls == OVERLAY_SERVICE) overlayRunning = true
         }
 
         val tcpAlive = BridgeHealthCheck.isAlive()
@@ -49,7 +44,6 @@ class ServiceMonitor(private val context: Context) {
         return ServiceStatus(
             serialBridgeRunning = bridgeRunning,
             serialBridgeTcpAlive = tcpAlive,
-            overlayRunning = overlayRunning,
         )
     }
 
@@ -58,15 +52,6 @@ class ServiceMonitor(private val context: Context) {
             Runtime.getRuntime().exec(arrayOf(
                 "am", "startservice",
                 "-n", "$SERIAL_BRIDGE_PKG/$SERIAL_BRIDGE_SERVICE"
-            ))
-        } catch (_: Exception) {}
-    }
-
-    fun restartOverlay() {
-        try {
-            Runtime.getRuntime().exec(arrayOf(
-                "am", "startservice",
-                "-n", "$OVERLAY_PKG/$OVERLAY_SERVICE"
             ))
         } catch (_: Exception) {}
     }

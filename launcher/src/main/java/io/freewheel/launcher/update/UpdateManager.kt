@@ -297,7 +297,8 @@ class UpdateManager(
         }
     }
 
-    private fun isNewer(remote: String, local: String): Boolean {
+    @androidx.annotation.VisibleForTesting
+    internal fun isNewer(remote: String, local: String): Boolean {
         val remoteParts = remote.split(".").mapNotNull { it.toIntOrNull() }
         val localParts = local.split(".").mapNotNull { it.toIntOrNull() }
 

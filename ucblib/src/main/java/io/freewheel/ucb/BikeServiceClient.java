@@ -319,6 +319,26 @@ public class BikeServiceClient {
         }
     }
 
+    /** Get UCB firmware version string (e.g. "R_5.87.5"). Returns null if not yet known. */
+    public String getFirmwareVersion() {
+        if (service == null) return null;
+        try {
+            return service.getFirmwareVersion();
+        } catch (RemoteException e) {
+            return null;
+        }
+    }
+
+    /** Get UCB hardware variant ID. Returns -1 if not connected. */
+    public int getHardwareId() {
+        if (service == null) return -1;
+        try {
+            return service.getHardwareId();
+        } catch (RemoteException e) {
+            return -1;
+        }
+    }
+
     /** Get current heart rate from BLE HRM. Returns 0 if no HRM connected. */
     public int getHeartRate() {
         if (service == null) return 0;

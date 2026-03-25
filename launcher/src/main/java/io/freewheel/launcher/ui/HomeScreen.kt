@@ -34,6 +34,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -84,7 +87,6 @@ fun HomeScreen(
     onAppClick: (String) -> Unit,
     onSettingsClick: () -> Unit,
     onBridgeClick: () -> Unit,
-    onOverlayClick: () -> Unit,
     onTaskManagerClick: () -> Unit,
     onAppInfo: (String) -> Unit = {},
     onUninstall: (String) -> Unit = {},
@@ -97,17 +99,10 @@ fun HomeScreen(
     onMediaClick: () -> Unit = {},
     onHistoryClick: () -> Unit = {},
     updateAvailable: Boolean = false,
+    currentTime: Long = System.currentTimeMillis(),
 ) {
     var showAllApps by remember { mutableStateOf(false) }
     var longPressedTile: HomeTile.App? by remember { mutableStateOf(null) }
-    var currentTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
-
-    LaunchedEffect(Unit) {
-        while (true) {
-            currentTime = System.currentTimeMillis()
-            kotlinx.coroutines.delay(30_000)
-        }
-    }
 
     val lastRide = recentRides.firstOrNull()
     val streakDays = remember(recentRides) { calculateStreak(recentRides) }
@@ -165,7 +160,6 @@ fun HomeScreen(
                 currentTime = currentTime,
                 onSettingsClick = onSettingsClick,
                 onBridgeClick = onBridgeClick,
-                onOverlayClick = onOverlayClick,
                 onAllAppsClick = { showAllApps = true },
                 onTaskManagerClick = onTaskManagerClick,
                 updateAvailable = updateAvailable,
@@ -503,6 +497,8 @@ private fun HeroWorkoutCard(
                             contentPadding = PaddingValues(horizontal = 24.dp, vertical = 16.dp),
                             elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
                             modifier = Modifier
+                                .testTag("btn_browse_workouts")
+                                .semantics { contentDescription = "Browse Workouts" }
                                 .drawBehind {
                                     // Button glow
                                     drawCircle(
@@ -537,6 +533,9 @@ private fun HeroWorkoutCard(
                                 Color.White.copy(alpha = 0.20f),
                             ),
                             contentPadding = PaddingValues(horizontal = 24.dp, vertical = 16.dp),
+                            modifier = Modifier
+                                .testTag("btn_start_ride")
+                                .semantics { contentDescription = "Start Ride" },
                         ) {
                             Text(
                                 text = defaultFitnessAppLabel,
@@ -960,7 +959,8 @@ private fun HistoryNavTile(
     }
 }
 
-private fun calculateStreak(rides: List<RideRecord>): Int {
+@androidx.annotation.VisibleForTesting
+internal fun calculateStreak(rides: List<RideRecord>): Int {
     if (rides.isEmpty()) return 0
     val cal = java.util.Calendar.getInstance()
     val today = cal.get(java.util.Calendar.DAY_OF_YEAR) +
