@@ -182,8 +182,38 @@ fun LauncherApp(vm: LauncherViewModel) {
                 currentScreen = Screen.HOME
                 vm.clearRideNavigationEvent()
             }
+            is RideNavigationEvent.ConfirmEnd -> {
+                // Handled by dialog below
+            }
             null -> {}
         }
+    }
+
+    // End ride confirmation dialog (rides under 1 minute)
+    val confirmEndEvent = rideNavEvent as? RideNavigationEvent.ConfirmEnd
+    if (confirmEndEvent != null) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { vm.clearRideNavigationEvent() },
+            title = { Text("End Ride?", fontWeight = FontWeight.Bold) },
+            text = {
+                Text("You've only been riding for ${confirmEndEvent.elapsedSeconds} seconds. Rides under 1 minute won't be tracked.")
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    vm.clearRideNavigationEvent()
+                    vm.forceStopRide(confirmEndEvent.workoutId, confirmEndEvent.workoutName)
+                }) {
+                    Text("End Anyway", color = io.freewheel.launcher.ui.theme.HeartRateRed)
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    vm.clearRideNavigationEvent()
+                }) {
+                    Text("Keep Riding", color = io.freewheel.launcher.ui.theme.NeonAccent)
+                }
+            },
+        )
     }
 
     // Observe overlay summary (when returning from media app)

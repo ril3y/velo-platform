@@ -40,6 +40,7 @@ sealed class RideNavigationEvent {
     data class WorkoutRide(val workout: Workout) : RideNavigationEvent()
     data class WorkoutWithMedia(val workout: Workout, val mediaPackage: String) : RideNavigationEvent()
     data class ShowSummary(val summary: io.freewheel.launcher.data.RideSummary) : RideNavigationEvent()
+    data class ConfirmEnd(val elapsedSeconds: Int, val workoutId: String?, val workoutName: String?) : RideNavigationEvent()
 }
 
 class LauncherViewModel(application: Application) : AndroidViewModel(application) {
@@ -212,16 +213,24 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     // --- Ride operations ---
 
-    fun stopCurrentRide(workoutId: String? = null, workoutName: String? = null): io.freewheel.launcher.data.RideSummary? {
+    fun stopCurrentRide(workoutId: String? = null, workoutName: String? = null) {
+        val elapsed = rideSessionManager.rideElapsedSeconds.value
+        if (elapsed < 60 && elapsed > 0) {
+            // Ride under 1 minute — show confirmation
+            _rideNavigationEvent.value = RideNavigationEvent.ConfirmEnd(elapsed, workoutId, workoutName)
+        } else {
+            forceStopRide(workoutId, workoutName)
+        }
+    }
+
+    fun forceStopRide(workoutId: String? = null, workoutName: String? = null) {
         _workoutRideActive.value = false
         val summary = rideSessionManager.stopRide(workoutId, workoutName)
         if (summary != null) {
             _rideNavigationEvent.value = RideNavigationEvent.ShowSummary(summary)
         } else {
-            // No summary (ride too short or never started) — go home anyway
             _rideNavigationEvent.value = RideNavigationEvent.GoHome
         }
-        return summary
     }
 
     // --- Bridge pass-through for diagnostics/calibration/OTA ---

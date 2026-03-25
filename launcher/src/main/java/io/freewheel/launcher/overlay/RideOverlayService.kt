@@ -381,12 +381,15 @@ class RideOverlayService : Service() {
                     stopSelf()
                 } else {
                     endConfirmPending = true
-                    tv.text = "SURE?"
+                    val shortRide = elapsedSeconds < 60
+                    tv.text = if (shortRide) "< 1 MIN\nNOT TRACKED" else "SURE?"
+                    tv.textSize = if (shortRide) 8f else 11f
                     (tv.background as? android.graphics.drawable.GradientDrawable)
                         ?.setColor(Color.parseColor("#DC2626"))
                     tv.postDelayed({
                         endConfirmPending = false
                         tv.text = "END"
+                        tv.textSize = 11f
                         (tv.background as? android.graphics.drawable.GradientDrawable)
                             ?.setColor(Color.parseColor("#F43F5E"))
                     }, 3000)
