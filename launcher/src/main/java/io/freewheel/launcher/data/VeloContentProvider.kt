@@ -347,7 +347,43 @@ class VeloContentProvider : ContentProvider() {
         return ContentUris.withAppendedId(URI_RIDES, id)
     }
 
-    override fun update(uri: Uri, values: ContentValues?, selection: String?, selectionArgs: Array<out String>?): Int = 0
+    override fun update(uri: Uri, values: ContentValues?, selection: String?, selectionArgs: Array<out String>?): Int {
+        if (values == null) return 0
+        return when (uriMatcher.match(uri)) {
+            PROFILE -> updateProfile(values)
+            else -> 0
+        }
+    }
+
+    private fun updateProfile(values: ContentValues): Int {
+        val sqlDb = db.openHelper.writableDatabase
+        // Check if profile exists
+        val c = sqlDb.query("SELECT id FROM user_profile WHERE id = 1")
+        val exists = c.moveToFirst()
+        c.close()
+
+        val cv = android.content.ContentValues()
+        if (values.containsKey("displayName")) cv.put("displayName", values.getAsString("displayName"))
+        if (values.containsKey("weightLbs")) cv.put("weightLbs", values.getAsInteger("weightLbs"))
+        if (values.containsKey("heightInches")) cv.put("heightInches", values.getAsInteger("heightInches"))
+        if (values.containsKey("age")) cv.put("age", values.getAsInteger("age"))
+        if (values.containsKey("gender")) cv.put("gender", values.getAsString("gender"))
+        if (values.containsKey("ftp")) cv.put("ftp", values.getAsInteger("ftp"))
+        if (values.containsKey("maxHeartRate")) cv.put("maxHeartRate", values.getAsInteger("maxHeartRate"))
+
+        return if (exists) {
+            val rows = sqlDb.update("user_profile", 0, cv, "id = ?", arrayOf("1"))
+            context?.contentResolver?.notifyChange(URI_PROFILE, null)
+            context?.contentResolver?.notifyChange(URI_FITNESS_CONFIG, null)
+            rows
+        } else {
+            cv.put("id", 1)
+            sqlDb.insert("user_profile", 0, cv)
+            context?.contentResolver?.notifyChange(URI_PROFILE, null)
+            context?.contentResolver?.notifyChange(URI_FITNESS_CONFIG, null)
+            1
+        }
+    }
     override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?): Int = 0
     override fun getType(uri: Uri): String? = when (uriMatcher.match(uri)) {
         WORKOUTS -> "vnd.android.cursor.dir/vnd.$AUTHORITY.workouts"
