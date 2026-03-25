@@ -212,7 +212,8 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     // --- Ride operations ---
 
     fun startFreeRide() {
-        rideSessionManager.startRide()
+        _workoutRideActive.value = true
+        // Don't start ride yet — countdown shows first, ride starts via beginRide()
         _rideNavigationEvent.value = RideNavigationEvent.FreeRide
     }
 
@@ -305,8 +306,14 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     fun startWorkoutStatsOnly() {
         val workout = _selectedWorkout.value ?: return
         _workoutRideActive.value = true
-        rideSessionManager.startRide()
+        // Don't start ride yet — countdown screen shows first
+        // The actual ride starts via beginRide() after countdown
         _rideNavigationEvent.value = RideNavigationEvent.WorkoutRide(workout)
+    }
+
+    /** Called after countdown completes for stats-only and free ride workouts */
+    fun beginRide() {
+        rideSessionManager.startRide()
     }
 
     fun startWorkoutWithMedia() {

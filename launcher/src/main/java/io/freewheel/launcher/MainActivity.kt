@@ -424,6 +424,8 @@ fun LauncherApp(vm: LauncherViewModel) {
                         vm.launchMediaOverlay()
                         // Don't change screen — media app takes over
                     } else {
+                        // Start the ride NOW (after countdown, not before)
+                        vm.beginRide()
                         currentScreen = postCountdownScreen
                     }
                 },
