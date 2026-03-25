@@ -152,7 +152,13 @@ class RideOverlayService : Service() {
         )
         params.gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
 
-        windowManager?.addView(overlayView, params)
+        try {
+            windowManager?.addView(overlayView, params)
+        } catch (e: Exception) {
+            android.util.Log.e("RideOverlay", "Failed to add overlay — permission denied?", e)
+            stopSelf()
+            return
+        }
 
         // Right-side effort bar (only for workouts with segments)
         if (segments.isNotEmpty()) {

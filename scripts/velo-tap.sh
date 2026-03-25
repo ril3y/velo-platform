@@ -11,12 +11,14 @@ if [ "$1" = "--desc" ]; then
     QUERY="$2"
 fi
 
-# Dump UI hierarchy
+# Dump UI hierarchy (use exec-out to avoid MSYS path conversion issues)
+export MSYS_NO_PATHCONV=1
 adb -s "$DEVICE" shell uiautomator dump /sdcard/velo_ui.xml 2>/dev/null
+UI_XML=$(adb -s "$DEVICE" exec-out cat /sdcard/velo_ui.xml 2>/dev/null)
 
 # Parse bounds for the matching element
-BOUNDS=$(adb -s "$DEVICE" shell cat /sdcard/velo_ui.xml 2>/dev/null | \
-    sed 's/></>\n</g' | \
+BOUNDS=$(echo "$UI_XML" | \
+    tr '>' '\n' | \
     grep "${MODE}=\"${QUERY}\"" | \
     head -1 | \
     grep -oE 'bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' | \
@@ -25,8 +27,8 @@ BOUNDS=$(adb -s "$DEVICE" shell cat /sdcard/velo_ui.xml 2>/dev/null | \
 if [ -z "$BOUNDS" ]; then
     echo "ERROR: Element not found: ${MODE}=\"${QUERY}\"" >&2
     echo "Available elements:" >&2
-    adb -s "$DEVICE" shell cat /sdcard/velo_ui.xml 2>/dev/null | \
-        sed 's/></>\n</g' | \
+    echo "$UI_XML" | \
+        tr '>' '\n' | \
         grep -oE '(text|content-desc)="[^"]*"' | \
         sort -u | head -20 >&2
     exit 1
