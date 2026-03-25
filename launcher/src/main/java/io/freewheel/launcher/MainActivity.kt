@@ -30,9 +30,10 @@ class MainActivity : ComponentActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         hideSystemUI()
 
-        // Kiosk mode: keep WiFi alive always (this is a plugged-in bike, not a battery device)
+        // Kiosk mode settings (plugged-in bike, not a battery device)
         try {
-            android.provider.Settings.Global.putInt(contentResolver, "wifi_sleep_policy", 0) // 0 = never sleep
+            android.provider.Settings.Global.putInt(contentResolver, "wifi_sleep_policy", 0) // WiFi never sleeps
+            android.provider.Settings.System.putInt(contentResolver, "screen_off_timeout", 2147483647) // Screen never times out
         } catch (_: Exception) {}
 
         setContent {
