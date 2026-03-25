@@ -99,7 +99,7 @@ class MainActivity : ComponentActivity() {
 private enum class Screen {
     SETUP, HOME, WORKOUT_PICKER, WORKOUT_DETAIL,
     SETTINGS, TASK_MANAGER, RIDE_HISTORY,
-    FREE_RIDE, WORKOUT_RIDE, RIDE_SUMMARY,
+    COUNTDOWN, FREE_RIDE, WORKOUT_RIDE, RIDE_SUMMARY,
 }
 
 @Composable
@@ -143,23 +143,31 @@ fun LauncherApp(vm: LauncherViewModel) {
     var currentScreen by remember { mutableStateOf(Screen.HOME) }
     var rideSummary by remember { mutableStateOf<RideSummary?>(null) }
     var activeWorkout by remember { mutableStateOf<Workout?>(null) }
+    var postCountdownScreen by remember { mutableStateOf(Screen.HOME) }
+    var countdownForMediaOverlay by remember { mutableStateOf(false) }
 
     // Observe ride navigation events
     val rideNavEvent by vm.rideNavigationEvent.collectAsState()
     LaunchedEffect(rideNavEvent) {
         when (val event = rideNavEvent) {
             is RideNavigationEvent.FreeRide -> {
-                currentScreen = Screen.FREE_RIDE
+                countdownForMediaOverlay = false
+                postCountdownScreen = Screen.FREE_RIDE
+                currentScreen = Screen.COUNTDOWN
                 vm.clearRideNavigationEvent()
             }
             is RideNavigationEvent.WorkoutRide -> {
                 activeWorkout = event.workout
-                currentScreen = Screen.WORKOUT_RIDE
+                countdownForMediaOverlay = false
+                postCountdownScreen = Screen.WORKOUT_RIDE
+                currentScreen = Screen.COUNTDOWN
                 vm.clearRideNavigationEvent()
             }
             is RideNavigationEvent.WorkoutWithMedia -> {
+                activeWorkout = event.workout
+                countdownForMediaOverlay = true
+                currentScreen = Screen.COUNTDOWN
                 vm.clearRideNavigationEvent()
-                // No screen change — media app is in foreground with overlay
             }
             is RideNavigationEvent.ShowSummary -> {
                 rideSummary = event.summary
@@ -401,6 +409,21 @@ fun LauncherApp(vm: LauncherViewModel) {
                 ramUsedMb = ramUsed,
                 ramTotalMb = ramTotal,
                 currentTime = currentTime,
+            )
+        }
+
+        currentScreen == Screen.COUNTDOWN -> {
+            CountdownScreen(
+                workoutName = activeWorkout?.name,
+                onComplete = {
+                    if (countdownForMediaOverlay) {
+                        countdownForMediaOverlay = false
+                        vm.launchMediaOverlay()
+                        // Don't change screen — media app takes over
+                    } else {
+                        currentScreen = postCountdownScreen
+                    }
+                },
             )
         }
 

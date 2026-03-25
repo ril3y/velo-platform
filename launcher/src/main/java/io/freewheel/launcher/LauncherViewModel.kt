@@ -313,15 +313,22 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         val workout = _selectedWorkout.value ?: return
         val media = _selectedMedia.value ?: return
         _workoutRideActive.value = true
+        // Don't start ride or launch media yet — countdown screen shows first
+        // The actual launch happens via launchMediaOverlay() after countdown
+        _rideNavigationEvent.value = RideNavigationEvent.WorkoutWithMedia(workout, media.packageName)
+    }
+
+    /** Called after countdown completes for media+overlay workouts */
+    fun launchMediaOverlay() {
+        val workout = _selectedWorkout.value ?: return
+        val media = _selectedMedia.value ?: return
         rideSessionManager.startRide()
-        // Start overlay service
         val app = getApplication<Application>()
         val serviceIntent = Intent(app, io.freewheel.launcher.overlay.RideOverlayService::class.java).apply {
             action = "io.freewheel.launcher.OVERLAY_START"
             putExtra("workout_json", workout.toJson())
         }
         app.startForegroundService(serviceIntent)
-        // Launch the media app
         app.packageManager.getLaunchIntentForPackage(media.packageName)?.let {
             it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             app.startActivity(it)
