@@ -393,6 +393,7 @@ fun LauncherApp(vm: LauncherViewModel) {
                     instruction = calProgress?.second ?: "",
                     completed = calComplete != null,
                     success = calComplete == true,
+                    liveResistance = bridgeSensor.resistanceLevel,
                 ),
                 onStartCalibration = { vm.startCalibration(0) },
                 onConfirmCalibrationStep = { vm.confirmCalibrationStep() },

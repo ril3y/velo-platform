@@ -20,6 +20,7 @@ data class CalibrationState(
     val instruction: String = "",
     val completed: Boolean = false,
     val success: Boolean = false,
+    val liveResistance: Int = 0, // current knob position from sensor (0-100)
 )
 
 @Composable
@@ -122,6 +123,76 @@ fun CalibrationPane(
                     color = TextPrimary,
                     textAlign = TextAlign.Center,
                 )
+
+                // Live resistance indicator — always shown, highlighted on step 3
+                val isHalfwayStep = state.currentStep == 2
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    // Large number
+                    Text(
+                        text = "${state.liveResistance}",
+                        style = MaterialTheme.typography.displayMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        ),
+                        color = when {
+                            isHalfwayStep && state.liveResistance in 45..55 -> StatusGreen
+                            isHalfwayStep -> NeonAccent
+                            else -> TextSecondary
+                        },
+                    )
+                    Text(
+                        text = if (isHalfwayStep) "Turn to 50" else "Current position",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (isHalfwayStep) NeonAccent else TextMuted,
+                    )
+
+                    Spacer(Modifier.height(8.dp))
+
+                    // Progress bar showing 0-100
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(0.8f)
+                            .height(12.dp)
+                            .background(SurfaceBorder, RoundedCornerShape(6.dp)),
+                    ) {
+                        // Fill
+                        Box(
+                            modifier = Modifier
+                                .fillMaxHeight()
+                                .fillMaxWidth(fraction = (state.liveResistance / 100f).coerceIn(0f, 1f))
+                                .background(
+                                    when {
+                                        isHalfwayStep && state.liveResistance in 45..55 -> StatusGreen
+                                        isHalfwayStep -> NeonAccent
+                                        else -> TextSecondary
+                                    },
+                                    RoundedCornerShape(6.dp),
+                                ),
+                        )
+                        // Center mark (50%) — shown during halfway step
+                        if (isHalfwayStep) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.Center)
+                                    .width(2.dp)
+                                    .fillMaxHeight()
+                                    .background(StatusGreen),
+                            )
+                        }
+                    }
+
+                    if (isHalfwayStep && state.liveResistance in 45..55) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "✓ Good — press Confirm",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                            color = StatusGreen,
+                        )
+                    }
+                }
 
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
