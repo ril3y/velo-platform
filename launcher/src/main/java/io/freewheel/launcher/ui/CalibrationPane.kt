@@ -40,8 +40,9 @@ fun CalibrationPane(
         )
 
         Text(
-            text = "Calibrate the resistance knob for accurate resistance levels. " +
-                "3 steps: turn fully left (min), fully right (max), then halfway.",
+            text = "Most users do not need to calibrate. Only use this if your resistance " +
+                "levels feel inaccurate (e.g., level 10 feels like level 5, or the knob " +
+                "range doesn't match the display). The factory calibration is usually correct.",
             style = MaterialTheme.typography.bodySmall,
             color = TextSecondary,
         )
