@@ -14,7 +14,7 @@ Replaces the stock Nautilus/JRNY software with an open framework: a serial bridg
 | [**velofit**](velofit/) | Android Library | `io.freewheel.fit` | Fitness app SDK — `WorkoutSessionClient` for real-time bike control, `VeloFitnessClient` for profile/rides/workouts |
 
 See also:
-- [**FreeWheel**](https://github.com/ril3y/bowflex-tool) — One-click jailbreak tool (Windows, Go)
+- [**FreeWheel**](https://github.com/ril3y/freewheel) — One-click jailbreak tool (Windows, Go)
 - [**BikeArcade**](https://github.com/ril3y/bike-arcade) — Retro arcade games controlled by pedaling
 - [**Developer Guide**](DEVELOPER.md) — Build fitness apps for the platform
 
