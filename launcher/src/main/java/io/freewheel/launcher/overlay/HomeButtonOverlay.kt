@@ -46,20 +46,28 @@ class HomeButtonOverlay : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-        // Run as foreground service so Android doesn't kill it
+        // Must call startForeground IMMEDIATELY — before anything that could fail
         val channelId = "home_gesture"
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(channelId, "Navigation", NotificationManager.IMPORTANCE_MIN)
-            channel.setShowBadge(false)
-            (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).createNotificationChannel(channel)
-        }
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val channel = NotificationChannel(channelId, "Navigation", NotificationManager.IMPORTANCE_MIN)
+                channel.setShowBadge(false)
+                (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).createNotificationChannel(channel)
+            }
+        } catch (_: Exception) {}
         val notification = Notification.Builder(this, channelId)
             .setSmallIcon(android.R.drawable.ic_menu_compass)
             .setOngoing(true)
             .build()
         startForeground(NOTIFICATION_ID, notification)
-        createEdgeZone()
+
+        // Now try to create the gesture zone — if this fails, service stays alive but invisible
+        windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+        try {
+            createEdgeZone()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to create edge zone — overlay permission may be missing", e)
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
