@@ -77,18 +77,18 @@ public class MfgTestCommand {
 
     public static String phaseName(int phase) {
         switch (phase) {
-            case CAL_PHASE_ZERO: return "Zero (minimum)";
+            case CAL_PHASE_ZERO: return "Minimum";
             case CAL_PHASE_MAX: return "Maximum";
-            case CAL_PHASE_CENTER: return "Center detent";
+            case CAL_PHASE_CENTER: return "Center (halfway)";
             default: return "Unknown phase " + phase;
         }
     }
 
     public static String phaseInstruction(int phase) {
         switch (phase) {
-            case CAL_PHASE_ZERO: return "Turn resistance knob to minimum (zero). Press Confirm.";
-            case CAL_PHASE_MAX: return "Turn resistance knob to maximum. Press Confirm.";
-            case CAL_PHASE_CENTER: return "Turn resistance knob to center detent. Press Confirm.";
+            case CAL_PHASE_ZERO: return "Turn resistance knob fully LEFT to minimum. Press Confirm.";
+            case CAL_PHASE_MAX: return "Turn resistance knob fully RIGHT to maximum. Press Confirm.";
+            case CAL_PHASE_CENTER: return "Turn resistance knob to the HALFWAY point between min and max. Press Confirm.";
             default: return "Unknown calibration phase.";
         }
     }

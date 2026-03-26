@@ -40,7 +40,7 @@ fun CalibrationPane(
 
         Text(
             text = "Calibrate the resistance knob for accurate resistance levels. " +
-                "This is a 3-step process: zero, maximum, and center.",
+                "3 steps: turn fully left (min), fully right (max), then halfway.",
             style = MaterialTheme.typography.bodySmall,
             color = TextSecondary,
         )
