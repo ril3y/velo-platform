@@ -1,0 +1,24 @@
+{
+  "id": "climbing-45",
+  "name": "Mountain Climb 45",
+  "description": "45-minute progressive climb. Conquer 4 peaks with recovery valleys.",
+  "durationMinutes": 45,
+  "type": "cycling",
+  "category": "Endurance",
+  "coach": "",
+  "optionalMedia": true,
+  "color": "#F59E0B",
+  "segments": [
+    {"label": "Warm Up", "durationSeconds": 300, "resistance": 5, "message": "Easy start"},
+    {"label": "Foothills", "durationSeconds": 240, "resistance": 10, "message": "Building base"},
+    {"label": "Climb 1", "durationSeconds": 240, "resistance": 16, "message": "First peak ahead"},
+    {"label": "Valley", "durationSeconds": 120, "resistance": 8, "message": "Recovery valley"},
+    {"label": "Climb 2", "durationSeconds": 240, "resistance": 18, "message": "Steeper now"},
+    {"label": "Valley", "durationSeconds": 120, "resistance": 8, "message": "Recovery valley"},
+    {"label": "Climb 3", "durationSeconds": 240, "resistance": 20, "message": "Push through"},
+    {"label": "Valley", "durationSeconds": 120, "resistance": 8, "message": "Last recovery"},
+    {"label": "Summit", "durationSeconds": 300, "resistance": 22, "message": "Summit push!"},
+    {"label": "Descent", "durationSeconds": 180, "resistance": 6, "message": "Enjoy the downhill"},
+    {"label": "Cool Down", "durationSeconds": 300, "resistance": 3, "message": "Great climb!"}
+  ]
+}

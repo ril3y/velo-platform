@@ -1,0 +1,21 @@
+{
+  "id": "endurance-60",
+  "name": "Endurance 60",
+  "description": "60-minute moderate endurance ride. Build stamina with steady effort.",
+  "durationMinutes": 60,
+  "type": "cycling",
+  "category": "Endurance",
+  "coach": "",
+  "optionalMedia": true,
+  "color": "#22C55E",
+  "segments": [
+    {"label": "Warm Up", "durationSeconds": 300, "resistance": 5, "message": "Easy spinning to warm up"},
+    {"label": "Build", "durationSeconds": 300, "resistance": 8, "message": "Gradually increase effort"},
+    {"label": "Endurance Zone", "durationSeconds": 900, "resistance": 12, "message": "Find your rhythm"},
+    {"label": "Tempo Push", "durationSeconds": 300, "resistance": 15, "message": "Push the pace"},
+    {"label": "Endurance Zone", "durationSeconds": 900, "resistance": 12, "message": "Back to steady state"},
+    {"label": "Tempo Push", "durationSeconds": 300, "resistance": 15, "message": "One more push"},
+    {"label": "Endurance Zone", "durationSeconds": 600, "resistance": 10, "message": "Settle in"},
+    {"label": "Cool Down", "durationSeconds": 300, "resistance": 5, "message": "Easy spinning, great ride!"}
+  ]
+}

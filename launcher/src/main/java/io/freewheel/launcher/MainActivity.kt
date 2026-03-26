@@ -588,6 +588,13 @@ fun LauncherApp(vm: LauncherViewModel) {
                 onMediaClick = { currentScreen = Screen.WORKOUT_PICKER },
                 onHistoryClick = { currentScreen = Screen.RIDE_HISTORY },
                 updateAvailable = updateAvailableCount > 0,
+                updateVersion = vm.updateLatestVersion.collectAsState().value,
+                updateChangelog = vm.updateChangelog.collectAsState().value,
+                onUpdateClick = {
+                    vm.downloadUpdate()
+                    currentScreen = Screen.SETTINGS // go to settings to see progress
+                },
+                onDismissUpdate = { /* TODO: suppress for this version */ },
                 currentTime = currentTime,
             )
         }

@@ -456,7 +456,7 @@ fun SettingsScreen(
 }
 
 @Composable
-private fun SimpleMarkdownText(
+internal fun SimpleMarkdownText(
     markdown: String,
     modifier: Modifier = Modifier,
 ) {

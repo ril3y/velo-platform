@@ -3,6 +3,10 @@ package io.freewheel.launcher.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
@@ -97,6 +101,10 @@ fun HomeScreen(
     onMediaClick: () -> Unit = {},
     onHistoryClick: () -> Unit = {},
     updateAvailable: Boolean = false,
+    updateVersion: String = "",
+    updateChangelog: String = "",
+    onUpdateClick: () -> Unit = {},
+    onDismissUpdate: () -> Unit = {},
     currentTime: Long = System.currentTimeMillis(),
 ) {
     var showAllApps by remember { mutableStateOf(false) }
@@ -162,6 +170,84 @@ fun HomeScreen(
                 onTaskManagerClick = onTaskManagerClick,
                 updateAvailable = updateAvailable,
             )
+
+            // Update banner
+            if (updateAvailable && updateVersion.isNotBlank()) {
+                var showUpdateDialog by remember { mutableStateOf(false) }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 4.dp)
+                        .background(NeonAccent.copy(alpha = 0.12f), RoundedCornerShape(12.dp))
+                        .border(1.dp, NeonAccent.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+                        .clickable { showUpdateDialog = true }
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "\uD83D\uDD14",
+                        fontSize = 18.sp,
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "Update available: v$updateVersion",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                            color = NeonAccent,
+                        )
+                        Text(
+                            "Tap to view release notes and install",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextSecondary,
+                        )
+                    }
+                    Text(
+                        "\u2715",
+                        color = TextMuted,
+                        fontSize = 16.sp,
+                        modifier = Modifier
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                            ) { onDismissUpdate() }
+                            .padding(8.dp),
+                    )
+                }
+
+                if (showUpdateDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showUpdateDialog = false },
+                        title = {
+                            Text("Update v$updateVersion", fontWeight = FontWeight.Bold)
+                        },
+                        text = {
+                            Column {
+                                if (updateChangelog.isNotBlank()) {
+                                    SimpleMarkdownText(updateChangelog)
+                                } else {
+                                    Text("A new version is available.", color = TextSecondary)
+                                }
+                            }
+                        },
+                        confirmButton = {
+                            Button(
+                                onClick = {
+                                    showUpdateDialog = false
+                                    onUpdateClick()
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = NeonAccent),
+                            ) {
+                                Text("Install Update", color = DarkBackground, fontWeight = FontWeight.Bold)
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showUpdateDialog = false }) {
+                                Text("Later", color = TextMuted)
+                            }
+                        },
+                    )
+                }
+            }
 
             // Main content: 12-col grid approximation
             Row(

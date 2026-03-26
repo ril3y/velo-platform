@@ -1,0 +1,30 @@
+{
+  "id": "hiit-30",
+  "name": "HIIT 30",
+  "description": "30-minute high-intensity intervals. Maximum calorie burn.",
+  "durationMinutes": 30,
+  "type": "cycling",
+  "category": "HIIT",
+  "coach": "",
+  "optionalMedia": true,
+  "color": "#EF4444",
+  "segments": [
+    {"label": "Warm Up", "durationSeconds": 180, "resistance": 5, "message": "Get the legs moving"},
+    {"label": "Sprint 1", "durationSeconds": 30, "resistance": 22, "message": "ALL OUT!"},
+    {"label": "Recover", "durationSeconds": 90, "resistance": 5, "message": "Breathe"},
+    {"label": "Sprint 2", "durationSeconds": 30, "resistance": 22, "message": "ALL OUT!"},
+    {"label": "Recover", "durationSeconds": 90, "resistance": 5, "message": "Breathe"},
+    {"label": "Sprint 3", "durationSeconds": 30, "resistance": 24, "message": "Harder!"},
+    {"label": "Recover", "durationSeconds": 90, "resistance": 5, "message": "Breathe"},
+    {"label": "Sprint 4", "durationSeconds": 30, "resistance": 24, "message": "Harder!"},
+    {"label": "Recover", "durationSeconds": 90, "resistance": 5, "message": "Breathe"},
+    {"label": "Sprint 5", "durationSeconds": 30, "resistance": 25, "message": "MAX EFFORT!"},
+    {"label": "Recover", "durationSeconds": 90, "resistance": 5, "message": "Breathe"},
+    {"label": "Sprint 6", "durationSeconds": 30, "resistance": 25, "message": "MAX EFFORT!"},
+    {"label": "Recover", "durationSeconds": 90, "resistance": 5, "message": "Breathe"},
+    {"label": "Sprint 7", "durationSeconds": 30, "resistance": 25, "message": "LAST ONE!"},
+    {"label": "Recover", "durationSeconds": 90, "resistance": 5, "message": "Breathe"},
+    {"label": "Sprint 8", "durationSeconds": 30, "resistance": 25, "message": "FINISH STRONG!"},
+    {"label": "Cool Down", "durationSeconds": 180, "resistance": 3, "message": "Amazing work!"}
+  ]
+}
