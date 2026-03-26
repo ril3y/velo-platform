@@ -3,6 +3,7 @@ package io.freewheel.fit;
 import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.Context;
+import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
 import android.util.Log;
@@ -22,6 +23,7 @@ import android.util.Log;
 public class VeloFitnessClient {
 
     private static final String TAG = "VeloFit";
+    public static final String ACTION_SHOW_RIDE_SUMMARY = "io.freewheel.launcher.SHOW_RIDE_SUMMARY";
     private static final String AUTHORITY = "io.freewheel.launcher.provider";
     private static final Uri URI_FITNESS_CONFIG = Uri.parse("content://" + AUTHORITY + "/fitness_config");
     private static final Uri URI_TARGET_POWER = Uri.parse("content://" + AUTHORITY + "/target_power");
@@ -233,6 +235,41 @@ public class VeloFitnessClient {
             return available;
         } catch (Exception e) {
             return false;
+        }
+    }
+
+    /**
+     * Show the VeloLauncher ride summary screen for a completed ride.
+     *
+     * Launches the launcher's RideSummaryActivity via an implicit intent.
+     * Silently does nothing if the launcher is not installed or the ride
+     * is shorter than 60 seconds.
+     *
+     * @param context  Application or Activity context.
+     * @param stats    The ride statistics to display.
+     * @param workoutName  Display name for the workout (e.g. "BikeArcade — Mario Kart").
+     */
+    public static void showRideSummary(Context context, RideStats stats, String workoutName) {
+        if (stats.durationSeconds < 60) return;
+
+        Intent intent = new Intent(ACTION_SHOW_RIDE_SUMMARY);
+        intent.putExtra("durationSeconds", stats.durationSeconds);
+        intent.putExtra("calories", stats.calories);
+        intent.putExtra("avgPower", stats.avgPower);
+        intent.putExtra("maxPower", stats.maxPower);
+        intent.putExtra("avgRpm", stats.avgRpm);
+        intent.putExtra("avgResistance", stats.avgResistance);
+        intent.putExtra("avgHeartRate", stats.avgHeartRate);
+        intent.putExtra("avgSpeedMph", stats.avgSpeedMph);
+        intent.putExtra("distanceMiles", stats.distanceMiles);
+        if (workoutName != null) {
+            intent.putExtra("workoutName", workoutName);
+        }
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try {
+            context.startActivity(intent);
+        } catch (Exception e) {
+            Log.w(TAG, "VeloLauncher not available for ride summary: " + e.getMessage());
         }
     }
 
