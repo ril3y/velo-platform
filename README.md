@@ -8,12 +8,15 @@ Replaces the stock Nautilus/JRNY software with an open framework: a serial bridg
 
 | Module | Type | Package | Description |
 |--------|------|---------|-------------|
-| [**launcher**](launcher/README.md) | Android App | `io.freewheel.launcher` | VeloLauncher — fitness platform launcher with persistent bridge connection, workout session management, app registry, ride tracking, floating overlay, self-update |
-| [**freeride**](freeride/README.md) | Android App | `io.freewheel.freeride` | Real-time fitness ride app — free rides, structured workouts with coaching, overlay mode for media apps |
-| [**freewheelbridge**](freewheelbridge/README.md) | Android App | `io.freewheel.bridge` | Platform-signed service — bridges `/dev/ttyS4` serial (UCB protocol) to AIDL IPC + TCP:9999, BLE HRM, OTA firmware, resistance calibration |
-| [**ucblib**](ucblib/README.md) | Android Library | `io.freewheel.ucb` | Low-level client library — AIDL definitions, `BikeServiceClient` wrapper, UCB protocol, sensor data, OTA/calibration helpers |
-| [**velofit**](velofit/README.md) | Android Library | `io.freewheel.fit` | Fitness app SDK — `WorkoutSessionClient` for real-time bike control, `VeloFitnessClient` for profile/rides/workouts, AIDL interfaces |
-| [**freewheel-jailbreak**](freewheel-jailbreak/README.md) | Windows App (Go) | `com.battlewithbytes.freewheel` | One-click jailbreak tool — native ADB, network discovery, 11-step automated jailbreak, auto-restore on failure |
+| [**launcher**](launcher/) | Android App | `io.freewheel.launcher` | VeloLauncher — fitness platform with workouts, free ride, media overlay, ride history, OTA updates, resistance calibration |
+| [**freewheelbridge**](freewheelbridge/) | Android App | `io.freewheel.bridge` | Platform-signed service — bridges `/dev/ttyS4` serial (UCB protocol) to AIDL IPC + TCP:9999, BLE HRM, OTA firmware |
+| [**ucblib**](ucblib/) | Android Library | `io.freewheel.ucb` | Low-level client library — AIDL definitions, `BikeServiceClient`, UCB protocol, sensor data, OTA/calibration, RidePhysics |
+| [**velofit**](velofit/) | Android Library | `io.freewheel.fit` | Fitness app SDK — `WorkoutSessionClient` for real-time bike control, `VeloFitnessClient` for profile/rides/workouts |
+
+See also:
+- [**FreeWheel**](https://github.com/ril3y/bowflex-tool) — One-click jailbreak tool (Windows, Go)
+- [**BikeArcade**](https://github.com/ril3y/bike-arcade) — Retro arcade games controlled by pedaling
+- [**Developer Guide**](DEVELOPER.md) — Build fitness apps for the platform
 
 ## Architecture
 
