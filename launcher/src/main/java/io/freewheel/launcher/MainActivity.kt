@@ -42,6 +42,14 @@ class MainActivity : ComponentActivity() {
             android.provider.Settings.System.putInt(contentResolver, "screen_off_timeout", 2147483647) // Screen never times out
         } catch (_: Exception) {}
 
+        // Safety net: ensure GMS and GSF are enabled (required for WiFi/BT stability).
+        // Early jailbreak versions disabled these to save RAM, which broke WiFi HAL
+        // and caused Bluetooth crash loops. Re-enable on every launch to self-heal.
+        try {
+            Runtime.getRuntime().exec(arrayOf("pm", "enable", "com.google.android.gms"))
+            Runtime.getRuntime().exec(arrayOf("pm", "enable", "com.google.android.gsf"))
+        } catch (_: Exception) {}
+
         // Always ensure the bottom-edge swipe gesture zone is running.
         // This survives app reinstalls and process kills — the user should
         // never get stuck in a fullscreen app with no way home.
