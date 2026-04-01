@@ -50,6 +50,13 @@ class MainActivity : ComponentActivity() {
             Runtime.getRuntime().exec(arrayOf("pm", "enable", "com.google.android.gsf"))
         } catch (_: Exception) {}
 
+        // Suppress system crash dialogs ("X keeps stopping") — the Realtek BT chip
+        // on Rockchip boards has HCI timeout issues that cause com.android.bluetooth
+        // to crash-loop, but BT audio (A2DP) still works fine through the HAL.
+        try {
+            android.provider.Settings.Global.putInt(contentResolver, "hide_error_dialogs", 1)
+        } catch (_: Exception) {}
+
         // Always ensure the bottom-edge swipe gesture zone is running.
         // This survives app reinstalls and process kills — the user should
         // never get stuck in a fullscreen app with no way home.
