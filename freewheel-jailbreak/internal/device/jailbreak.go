@@ -251,20 +251,17 @@ func RunJailbreak(ip string, log Logger) {
 	step(10, "Applying system settings")
 	conn, err = connect()
 	if err == nil {
-		// Disable Google apps (2GB device, GMS crashes BT/WiFi)
-		googleApps := []struct{ pkg, name string }{
-			{"com.google.android.gms", "Play Services"},
-			{"com.google.android.gsf", "Google Services Framework"},
-			{"com.android.chrome", "Chrome"},
-		}
-		for _, a := range googleApps {
-			conn.Shell(fmt.Sprintf("pm disable-user --user 0 %s 2>/dev/null", a.pkg))
-			log.Dim(fmt.Sprintf("  Disabled: %s", a.name))
-		}
+		// Disable Chrome only (saves RAM, not needed on bike)
+		// NOTE: Do NOT disable GMS or GSF — they're required for WiFi HAL
+		// and Bluetooth stability on Android 9. Disabling them causes WiFi
+		// to fail with "Operation not permitted" and BT to crash-loop.
+		conn.Shell("pm disable-user --user 0 com.android.chrome 2>/dev/null")
+		log.Dim("  Disabled: Chrome")
+		conn.Shell("pm enable com.google.android.gms 2>/dev/null")
+		conn.Shell("pm enable com.google.android.gsf 2>/dev/null")
 		conn.Shell("pm enable com.android.vending 2>/dev/null")
-		log.Success("  Play Store kept enabled")
 		conn.Shell("pm enable com.google.android.webview 2>/dev/null")
-		log.Success("  WebView enabled")
+		log.Success("  Google services, Play Store, WebView enabled")
 
 		// Enable navbar, disable kiosk mode
 		conn.Shell("settings put secure navigationbar_switch 1")
@@ -273,8 +270,8 @@ func RunJailbreak(ip string, log Logger) {
 		conn.Shell("settings put secure notification_switch 0")
 		conn.Shell("settings put secure ntls_launcher_preference 0")
 		conn.Shell("settings put global stay_on_while_plugged_in 3")
-		// Prevent WiFi sleep — wifi_sleep_policy 2 = never sleep
-		conn.Shell("settings put global wifi_sleep_policy 2")
+		// Prevent WiFi sleep — wifi_sleep_policy 0 = never sleep
+		conn.Shell("settings put global wifi_sleep_policy 0")
 		// 30-min screen timeout — long enough for ADB, short enough to prevent burn-in
 		// VeloLauncher dims at 5 min and sets brightness=0 at 15 min (app-level)
 		conn.Shell("settings put system screen_off_timeout 1800000")
@@ -329,7 +326,7 @@ func RunJailbreak(ip string, log Logger) {
 	log.Dim("  VeloLauncher set as home screen (free, no subscription)")
 	log.Dim("  JRNY, AppMonitor, OTA all disabled (persists across reboots)")
 	log.Dim("  FreeRide fitness app installed with overlay permission")
-	log.Dim("  Google apps disabled (2GB RAM), Play Store + WebView enabled")
+	log.Dim("  Chrome disabled, Google services kept enabled (required for WiFi/BT)")
 	log.Dim("  ADB on port 5555, navbar enabled, kiosk mode off")
 	log.Dim("  Screen stays on while plugged in")
 	log.Info("")
