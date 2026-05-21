@@ -469,7 +469,7 @@ fun LauncherApp(vm: LauncherViewModel) {
                     if (countdownForMediaOverlay) {
                         countdownForMediaOverlay = false
                         vm.launchMediaOverlay()
-                        // Don't change screen — media app takes over
+                        currentScreen = Screen.HOME  //Explicitly transition the screen state so it does not get stuck on countdown screen
                     } else {
                         // Start the ride NOW (after countdown, not before)
                         vm.beginRide()
