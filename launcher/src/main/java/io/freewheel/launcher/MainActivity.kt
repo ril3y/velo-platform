@@ -21,6 +21,7 @@ import io.freewheel.launcher.data.HomeTile
 import io.freewheel.launcher.data.RideSummary
 import io.freewheel.launcher.data.Workout
 import io.freewheel.launcher.overlay.HomeButtonOverlay
+import io.freewheel.launcher.overlay.OverlayPermissionManager
 import io.freewheel.launcher.ui.*
 import io.freewheel.launcher.update.UpdateStatus
 import io.freewheel.launcher.ui.theme.VeloLauncherTheme
@@ -29,8 +30,14 @@ class MainActivity : ComponentActivity() {
 
     private var viewModelRef: LauncherViewModel? = null
 
+    // 1. Declare the manager
+    private lateinit var overlayPermissionManager: OverlayPermissionManager
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // 2. Initialize the manager early in onCreate
+        overlayPermissionManager = OverlayPermissionManager(this)
 
         // Keep screen on, immersive mode
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -68,7 +75,11 @@ class MainActivity : ComponentActivity() {
             VeloLauncherTheme {
                 val vm: LauncherViewModel = viewModel()
                 viewModelRef = vm
-                LauncherApp(vm)
+                LauncherApp(
+                    vm = vm,
+                    //Pass the manager's request function down to the UI
+                    onRequestOverlay = { onGranted -> overlayPermissionManager.requestPermission(onGranted) }
+                )
             }
         }
     }
@@ -123,7 +134,7 @@ private enum class Screen {
 }
 
 @Composable
-fun LauncherApp(vm: LauncherViewModel) {
+fun LauncherApp(vm: LauncherViewModel, onRequestOverlay: (onGranted: () -> Unit) -> Unit) {
     val serviceStatus by vm.serviceStatus.collectAsState()
     val allApps by vm.allApps.collectAsState()
     val recentRides by vm.recentRides.collectAsState()
@@ -577,7 +588,7 @@ fun LauncherApp(vm: LauncherViewModel) {
                 workoutCategoryCount = vm.getWorkouts().map { it.category }.distinct().size,
                 onTileClick = { tile ->
                     when (tile) {
-                        is HomeTile.StartRide -> currentScreen = Screen.WORKOUT_PICKER
+                        is HomeTile.StartRide -> onRequestOverlay { currentScreen = Screen.WORKOUT_PICKER }
                         is HomeTile.App -> {
                             if (tile.isInstalled) vm.launchApp(tile.packageName)
                         }
@@ -599,8 +610,8 @@ fun LauncherApp(vm: LauncherViewModel) {
                 onViewAllRides = { currentScreen = Screen.RIDE_HISTORY },
                 burnInOffsetX = burnInOffsetX,
                 burnInOffsetY = burnInOffsetY,
-                onBrowseWorkouts = { currentScreen = Screen.WORKOUT_PICKER },
-                onMediaClick = { currentScreen = Screen.WORKOUT_PICKER },
+                onBrowseWorkouts = { onRequestOverlay { currentScreen = Screen.WORKOUT_PICKER } },
+                onMediaClick = { onRequestOverlay { currentScreen = Screen.WORKOUT_PICKER } },
                 onHistoryClick = { currentScreen = Screen.RIDE_HISTORY },
                 updateAvailable = updateAvailableCount > 0,
                 updateVersion = vm.updateLatestVersion.collectAsState().value,
