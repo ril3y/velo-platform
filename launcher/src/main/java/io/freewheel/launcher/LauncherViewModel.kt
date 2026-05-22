@@ -350,6 +350,34 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    // --- Overlay Summary Recovery ---
+    fun checkPendingOverlaySummary() {
+        val prefs = getApplication<Application>().getSharedPreferences("ride_overlay", Context.MODE_PRIVATE)
+        val timestamp = prefs.getLong("summary_timestamp", 0)
+
+        if (timestamp > 0) {
+            // Reconstruct the summary from saved data
+            val summary = io.freewheel.launcher.data.RideSummary(
+                durationSeconds = prefs.getInt("summary_duration", 0),
+                calories = prefs.getInt("summary_calories", 0),
+                avgPower = prefs.getInt("summary_avg_power", 0),
+                maxPower = prefs.getInt("summary_max_power", 0),
+                avgRpm = prefs.getInt("summary_avg_rpm", 0),
+                avgResistance = prefs.getInt("summary_avg_resistance", 0),
+                avgHeartRate = prefs.getInt("summary_avg_hr", 0),
+                avgSpeedMph = prefs.getFloat("summary_avg_speed", 0f),
+                distanceMiles = prefs.getFloat("summary_distance", 0f),
+                workoutName = prefs.getString("summary_workout_name", null)
+            )
+
+            // Clear the preferences so the summary is only shown once
+            prefs.edit().clear().apply()
+
+            // Trigger the navigation event to show the summary screen
+            _rideNavigationEvent.value = RideNavigationEvent.ShowSummary(summary)
+        }
+    }
+
     fun stopWorkoutRide() {
         _workoutRideActive.value = false
         rideSessionManager.stopRide()
