@@ -95,6 +95,8 @@ class MainActivity : ComponentActivity() {
             )
         } catch (_: Exception) {}
         viewModelRef?.loadApps()
+        // Automatically check if a ride was finished in the overlay while we were in a media app
+        viewModelRef?.checkPendingOverlaySummary()
     }
 
     @Suppress("DEPRECATION")
