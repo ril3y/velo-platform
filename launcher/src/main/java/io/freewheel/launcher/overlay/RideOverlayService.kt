@@ -831,6 +831,7 @@ class RideOverlayService : Service() {
         overlayView?.let { windowManager?.removeView(it) }
         effortBarOverlay?.let { windowManager?.removeView(it) }
         removeMiniFab()
+        removePauseOverlay()
         scope.cancel()
         restoreStatusBar()
     }
