@@ -519,10 +519,10 @@ class RideOverlayService : Service() {
             }
         }
 
-        // Collect connection state from bridge
+        // Collect link state from bridge (green only while valid frames are arriving)
         scope.launch {
-            bridge.connected.collect { isConnected ->
-                connected = isConnected
+            bridge.linkState.collect { state ->
+                connected = state == io.freewheel.ucb.BridgeDiagnostics.LinkState.BIKE_CONNECTED
                 updateConnectionUI()
             }
         }

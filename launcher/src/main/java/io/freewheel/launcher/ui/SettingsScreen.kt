@@ -62,6 +62,8 @@ fun SettingsScreen(
     // Diagnostics
     diagnosticsState: DiagnosticsState = DiagnosticsState(),
     onToggleRawMonitor: (Boolean) -> Unit = {},
+    onStartSensorTest: () -> Unit = {},
+    onStopSensorTest: () -> Unit = {},
     // OTA firmware flash
     otaFlashState: OtaFlashState = OtaFlashState(),
     onPickFirmwareFile: () -> Unit = {},
@@ -166,7 +168,9 @@ fun SettingsScreen(
                         ServiceRow(
                             name = "FreewheelBridge (TCP:9999)",
                             running = serviceStatus.serialBridgeRunning || serviceStatus.serialBridgeTcpAlive,
-                            detail = if (serviceStatus.serialBridgeTcpAlive) "Connected" else "Not responding",
+                            // TCP alive only proves the service is up; the bike link is separate
+                            detail = (if (serviceStatus.serialBridgeTcpAlive) "Service responding" else "Not responding") +
+                                " \u2022 " + diagnosticsState.linkState.label,
                             onRestart = onRestartBridge,
                         )
                         ToggleRow(
@@ -248,6 +252,8 @@ fun SettingsScreen(
                         DiagnosticsPane(
                             state = diagnosticsState,
                             onToggleRawMonitor = onToggleRawMonitor,
+                            onStartSensorTest = onStartSensorTest,
+                            onStopSensorTest = onStopSensorTest,
                         )
                     }
                     SettingsCategory.UCB_FIRMWARE -> {

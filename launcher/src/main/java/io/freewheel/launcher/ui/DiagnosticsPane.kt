@@ -16,9 +16,22 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.freewheel.launcher.ui.theme.*
+import io.freewheel.ucb.BridgeDiagnostics.LinkState
 
 data class DiagnosticsState(
-    val connected: Boolean = false,
+    /** Bridge bound / port open / valid frames within 5s — see BridgeDiagnostics.classify. */
+    val linkState: LinkState = LinkState.BRIDGE_NOT_RUNNING,
+    /** False when the installed FreewheelBridge predates getDiagnostics(). */
+    val diagnosticsAvailable: Boolean = false,
+    val portDev: String? = null,
+    val baud: Int = 0,
+    val bytesRead: Long = 0,
+    val framesOk: Long = 0,
+    val crcErrors: Long = 0,
+    val lastFrameAgeMs: Long = -1,
+    val holders: String = "none",
+    val sensorTestSecondsLeft: Int = 0,
+    val sensorTestMessage: String? = null,
     val firmwareState: Int = -1,
     val firmwareStateName: String = "Unknown",
     val resistance: Int = 0,
@@ -33,27 +46,38 @@ data class DiagnosticsState(
     val rawMonitorEnabled: Boolean = false,
 )
 
+fun linkStateColor(state: LinkState) = when (state) {
+    LinkState.BIKE_CONNECTED -> StatusGreen
+    LinkState.PORT_OPEN_NO_DATA, LinkState.PORT_CLOSED -> StatusYellow
+    LinkState.BRIDGE_NOT_RUNNING -> StatusRed
+}
+
 @Composable
 fun DiagnosticsPane(
     state: DiagnosticsState,
     onToggleRawMonitor: (Boolean) -> Unit,
+    onStartSensorTest: () -> Unit = {},
+    onStopSensorTest: () -> Unit = {},
 ) {
+    // Never leave a test workout running after the user navigates away from this pane
+    val stopTest by rememberUpdatedState(onStopSensorTest)
+    DisposableEffect(Unit) {
+        onDispose { stopTest() }
+    }
+
     Column(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        // Connection status
+        // Link status: only "Bike connected" when valid frames arrived in the last 5s
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier
                     .size(12.dp)
-                    .background(
-                        if (state.connected) StatusGreen else StatusRed,
-                        CircleShape,
-                    )
+                    .background(linkStateColor(state.linkState), CircleShape)
             )
             Spacer(Modifier.width(8.dp))
             Text(
-                text = if (state.connected) "UCB Connected" else "UCB Disconnected",
+                text = state.linkState.label,
                 style = MaterialTheme.typography.titleSmall,
                 color = TextPrimary,
             )
@@ -63,6 +87,56 @@ fun DiagnosticsPane(
                 style = MaterialTheme.typography.bodySmall,
                 color = TextSecondary,
             )
+        }
+
+        // Serial link counters from the bridge
+        if (state.diagnosticsAvailable) {
+            val age = when {
+                state.lastFrameAgeMs < 0 -> "never"
+                state.lastFrameAgeMs < 1000 -> "${state.lastFrameAgeMs} ms ago"
+                else -> "${state.lastFrameAgeMs / 1000} s ago"
+            }
+            Text(
+                text = "Port ${state.portDev ?: "?"} @ ${state.baud}  \u2022  bytes ${state.bytesRead}" +
+                    "  \u2022  frames ${state.framesOk}  \u2022  CRC errors ${state.crcErrors}" +
+                    "  \u2022  last frame $age",
+                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                color = TextSecondary,
+            )
+            if (state.holders != "none") {
+                Text(
+                    text = "Serial port also held by: ${state.holders}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = StatusYellow,
+                )
+            }
+        } else if (state.linkState != LinkState.BRIDGE_NOT_RUNNING) {
+            Text(
+                text = "Installed FreewheelBridge is too old to report link diagnostics \u2013 update it.",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextMuted,
+            )
+        }
+
+        // 30s sensor test: starts a workout through the normal API so the bike streams data
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            val testing = state.sensorTestSecondsLeft > 0
+            OutlinedButton(
+                onClick = { if (testing) onStopSensorTest() else onStartSensorTest() },
+                enabled = testing || state.linkState != LinkState.BRIDGE_NOT_RUNNING,
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = NeonAccent),
+                modifier = Modifier.height(48.dp),
+            ) {
+                Text(if (testing) "Stop test (${state.sensorTestSecondsLeft}s)" else "Test sensors (30s)")
+            }
+            if (state.sensorTestMessage != null) {
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    text = state.sensorTestMessage,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary,
+                )
+            }
         }
 
         // Sensor dashboard
