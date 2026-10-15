@@ -288,6 +288,9 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             return
         }
         val framesBefore = bridgeConnectionManager.diagnostics.value.framesOk
+        // StateFlow replays its current value, which may be left over from an earlier
+        // ride; only count SensorData emitted after the test started.
+        val staleSensorData = bridgeConnectionManager.sensorData.value
         if (!bridgeConnectionManager.startWorkout()) {
             _sensorTestMessage.value =
                 "Could not start sensors: ${bridgeConnectionManager.lastStartWorkoutError ?: "unknown error"}"
@@ -298,7 +301,9 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         sensorTestJob = viewModelScope.launch {
             var sawSensorData = false
             val sensorWatch = launch {
-                bridgeConnectionManager.sensorData.collect { if (it.rpm > 0 || it.power > 0f) sawSensorData = true }
+                bridgeConnectionManager.sensorData.collect {
+                    if (it !== staleSensorData && (it.rpm > 0 || it.power > 0f)) sawSensorData = true
+                }
             }
             try {
                 for (s in 30 downTo 1) {
