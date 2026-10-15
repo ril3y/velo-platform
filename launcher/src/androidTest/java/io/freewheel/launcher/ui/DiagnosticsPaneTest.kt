@@ -5,6 +5,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import io.freewheel.launcher.ui.util.setThemedContent
+import io.freewheel.ucb.BridgeDiagnostics.LinkState
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -15,7 +16,7 @@ class DiagnosticsPaneTest {
     val composeTestRule = createComposeRule()
 
     @Test
-    fun disconnectedStateShowsUcbDisconnected() {
+    fun disconnectedStateShowsBridgeNotRunning() {
         composeTestRule.setThemedContent {
             DiagnosticsPane(
                 state = DiagnosticsState(),
@@ -23,7 +24,7 @@ class DiagnosticsPaneTest {
             )
         }
 
-        composeTestRule.onNodeWithText("UCB Disconnected").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Bridge not running").assertIsDisplayed()
         composeTestRule.onNodeWithText("SENSORS").assertIsDisplayed()
     }
 
@@ -32,7 +33,7 @@ class DiagnosticsPaneTest {
         composeTestRule.setThemedContent {
             DiagnosticsPane(
                 state = DiagnosticsState(
-                    connected = true,
+                    linkState = LinkState.BIKE_CONNECTED,
                     firmwareStateName = "Running",
                     firmwareState = 5,
                     rpm = 75,
@@ -45,12 +46,33 @@ class DiagnosticsPaneTest {
             )
         }
 
-        composeTestRule.onNodeWithText("UCB Connected").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Bike connected").assertIsDisplayed()
         composeTestRule.onNodeWithText("75").assertIsDisplayed()
         composeTestRule.onNodeWithText("12").assertIsDisplayed()
         composeTestRule.onNodeWithText("150W").assertIsDisplayed()
         composeTestRule.onNodeWithText("3").assertIsDisplayed()
         composeTestRule.onNodeWithText("130 BPM").assertIsDisplayed()
+    }
+
+    @Test
+    fun portOpenWithoutFramesIsNotReportedAsConnected() {
+        composeTestRule.setThemedContent {
+            DiagnosticsPane(
+                state = DiagnosticsState(
+                    linkState = LinkState.PORT_OPEN_NO_DATA,
+                    diagnosticsAvailable = true,
+                    portDev = "/dev/ttyS4",
+                    baud = 230400,
+                    holders = "812:com.nautilus.nautiluslauncher",
+                ),
+                onToggleRawMonitor = {},
+            )
+        }
+
+        composeTestRule.onNodeWithText("Port open \u2013 no data from bike").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Serial port also held by: 812:com.nautilus.nautiluslauncher")
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithText("Test sensors (30s)").assertIsDisplayed()
     }
 
     @Test

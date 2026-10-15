@@ -17,6 +17,7 @@ import io.freewheel.launcher.data.RideDatabase
 import io.freewheel.launcher.data.UserProfile
 import io.freewheel.launcher.data.Workout
 import io.freewheel.launcher.data.WorkoutRepository
+import io.freewheel.launcher.ride.MediaRideHandoff
 import io.freewheel.launcher.ride.RideRepository
 import io.freewheel.launcher.ride.RideSessionManager
 import io.freewheel.launcher.service.ServiceMonitor
@@ -27,6 +28,8 @@ import io.freewheel.launcher.system.ScreenSaverManager
 import io.freewheel.launcher.system.SystemMonitor
 import io.freewheel.launcher.update.AppUpdate
 import io.freewheel.launcher.update.UpdateManager
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -58,7 +61,14 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     private val taskRepository = TaskRepository(application)
     private val serviceMonitor = ServiceMonitor(application)
     private val systemMonitor = SystemMonitor(application, viewModelScope)
-    private val rideSessionManager = RideSessionManager(bridgeConnectionManager, viewModelScope, rideRepository)
+    private val rideSessionManager = RideSessionManager(bridgeConnectionManager, viewModelScope, rideRepository) { reason ->
+        // Non-blocking: the ride still starts, but the user knows why the numbers stay at zero
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            android.widget.Toast.makeText(
+                application, "Could not start sensors: $reason", android.widget.Toast.LENGTH_LONG,
+            ).show()
+        }
+    }
     private val screenSaverManager = ScreenSaverManager(prefs, viewModelScope, application.contentResolver) {
         rideSessionManager.rideActive.value
     }
@@ -114,6 +124,8 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     // --- Exposed state: Bridge (for diagnostics, calibration, OTA) ---
     val bridgeConnected get() = bridgeConnectionManager.connected
+    val bridgeLinkState get() = bridgeConnectionManager.linkState
+    val bridgeDiagnostics get() = bridgeConnectionManager.diagnostics
     val bridgeSensorData get() = bridgeConnectionManager.sensorData
     val bridgeFirmwareState get() = bridgeConnectionManager.firmwareState
     val bridgeFirmwareStateName get() = bridgeConnectionManager.firmwareStateName
@@ -156,6 +168,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     val updateChangelog get() = updateManager.changelog
     val updateDownloadProgress get() = updateManager.downloadProgress
     val availableUpdates get() = updateManager.availableUpdates
+    val updateErrorMessage get() = updateManager.errorMessage
     val updateAvailableCount: StateFlow<Int> = updateManager.availableUpdates
         .map { it.size }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
@@ -177,6 +190,9 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     private val _workoutRideActive = MutableStateFlow(false)
     val workoutRideActive: StateFlow<Boolean> = _workoutRideActive.asStateFlow()
 
+    // Token of the media ride currently linked to RideOverlayService (0 = none)
+    private var mediaRideToken = 0L
+
     init {
         loadApps()
         startServiceMonitor()
@@ -185,6 +201,12 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         checkSetupComplete()
         workoutAppRegistry.start()
         updateManager.checkIfDue()
+        // Show overlay ride summaries as soon as the overlay publishes them (the
+        // launcher may already be in front), plus any left over from before a
+        // process restart (initial emission).
+        viewModelScope.launch {
+            MediaRideHandoff.summaryPublished.collect { checkPendingOverlaySummary() }
+        }
     }
 
     // --- App operations ---
@@ -225,7 +247,13 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     fun forceStopRide(workoutId: String? = null, workoutName: String? = null) {
         _workoutRideActive.value = false
+        // The launcher logs and summarizes this ride; tell the overlay (if a media
+        // ride is running) not to do it again, then stop it. Only reached once the
+        // user has confirmed ending, so "Keep Riding" leaves the overlay alone.
+        if (mediaRideToken != 0L) MediaRideHandoff.markEndedByLauncher(mediaRideToken)
+        mediaRideToken = 0L
         val summary = rideSessionManager.stopRide(workoutId, workoutName)
+        stopRideOverlay()
         if (summary != null) {
             _rideNavigationEvent.value = RideNavigationEvent.ShowSummary(summary)
         } else {
@@ -241,6 +269,75 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     fun setRawFrameMonitoring(enabled: Boolean) = bridgeConnectionManager.setRawFrameMonitoring(enabled)
     fun sendRawCommand(frame: ByteArray) = bridgeConnectionManager.sendRawCommand(frame)
     fun getBridgeService() = bridgeConnectionManager.getService()
+
+    // --- Diagnostics: 30s sensor test (uses the normal start/stop workout API) ---
+
+    private val _sensorTestSecondsLeft = MutableStateFlow(0)
+    val sensorTestSecondsLeft: StateFlow<Int> = _sensorTestSecondsLeft.asStateFlow()
+
+    private val _sensorTestMessage = MutableStateFlow<String?>(null)
+    val sensorTestMessage: StateFlow<String?> = _sensorTestMessage.asStateFlow()
+
+    private var sensorTestJob: Job? = null
+    private var sensorTestOwnsWorkout = false
+
+    fun startSensorTest() {
+        if (sensorTestJob?.isActive == true) return
+        if (rideSessionManager.rideActive.value || bridgeConnectionManager.workoutActive.value) {
+            _sensorTestMessage.value = "A workout is already running \u2013 sensors should already be live"
+            return
+        }
+        val framesBefore = bridgeConnectionManager.diagnostics.value.framesOk
+        // StateFlow replays its current value, which may be left over from an earlier
+        // ride; only count SensorData emitted after the test started.
+        val staleSensorData = bridgeConnectionManager.sensorData.value
+        if (!bridgeConnectionManager.startWorkout()) {
+            _sensorTestMessage.value =
+                "Could not start sensors: ${bridgeConnectionManager.lastStartWorkoutError ?: "unknown error"}"
+            return
+        }
+        sensorTestOwnsWorkout = true
+        _sensorTestMessage.value = "Pedal and change resistance \u2013 values below should move"
+        sensorTestJob = viewModelScope.launch {
+            var sawSensorData = false
+            val sensorWatch = launch {
+                bridgeConnectionManager.sensorData.collect {
+                    if (it !== staleSensorData && (it.rpm > 0 || it.power > 0f)) sawSensorData = true
+                }
+            }
+            try {
+                for (s in 30 downTo 1) {
+                    _sensorTestSecondsLeft.value = s
+                    delay(1000)
+                }
+                bridgeConnectionManager.refreshDiagnostics()
+                val newFrames = bridgeConnectionManager.diagnostics.value.framesOk - framesBefore
+                _sensorTestMessage.value = when {
+                    sawSensorData -> "Test finished \u2013 sensor data received"
+                    newFrames > 0 -> "Test finished \u2013 $newFrames frames from bike but no motion seen (did you pedal?)"
+                    else -> "Test finished \u2013 NO data from bike. Check the link status above."
+                }
+            } finally {
+                sensorWatch.cancel()
+                finishSensorTest()
+            }
+        }
+    }
+
+    fun stopSensorTest() {
+        if (sensorTestJob?.isActive == true) _sensorTestMessage.value = "Test stopped"
+        sensorTestJob?.cancel()
+        finishSensorTest()
+    }
+
+    private fun finishSensorTest() {
+        _sensorTestSecondsLeft.value = 0
+        if (sensorTestOwnsWorkout) {
+            sensorTestOwnsWorkout = false
+            // Don't tear down a real ride that somehow started meanwhile
+            if (!rideSessionManager.rideActive.value) bridgeConnectionManager.stopWorkout()
+        }
+    }
 
     // --- Task manager operations ---
 
@@ -337,17 +434,49 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     fun launchMediaOverlay() {
         val workout = _selectedWorkout.value ?: return
         val media = _selectedMedia.value ?: return
-        rideSessionManager.startRide()
+        val token = System.currentTimeMillis()
+        mediaRideToken = token
+        rideSessionManager.startRide(
+            endedElsewhere = { MediaRideHandoff.overlayOwns(token) },
+            onExternalStop = { summary ->
+                // Bridge ended the workout (overlay END, notification, watchdog).
+                // If the overlay owned the ride its summary arrives via
+                // MediaRideHandoff; otherwise show ours.
+                if (mediaRideToken == token) mediaRideToken = 0L
+                _workoutRideActive.value = false
+                if (summary != null) rideSessionManager.setOverlaySummary(summary)
+            },
+        )
         val app = getApplication<Application>()
         val serviceIntent = Intent(app, io.freewheel.launcher.overlay.RideOverlayService::class.java).apply {
-            action = "io.freewheel.launcher.OVERLAY_START"
+            action = io.freewheel.launcher.overlay.RideOverlayService.ACTION_START
             putExtra("workout_json", workout.toJson())
+            putExtra(io.freewheel.launcher.overlay.RideOverlayService.EXTRA_RIDE_TOKEN, token)
         }
         app.startForegroundService(serviceIntent)
         app.packageManager.getLaunchIntentForPackage(media.packageName)?.let {
             it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             app.startActivity(it)
         }
+    }
+
+    // --- Overlay Summary Recovery ---
+
+    /**
+     * Shows a summary the ride overlay saved when a media ride ended (called from
+     * onResume and whenever the overlay publishes one). Stale or already-shown
+     * summaries are discarded by [MediaRideHandoff.consumeSummary].
+     */
+    fun checkPendingOverlaySummary() {
+        val summary = MediaRideHandoff.consumeSummary(getApplication()) ?: return
+        rideSessionManager.setOverlaySummary(summary)
+    }
+
+    private fun stopRideOverlay() {
+        try {
+            val app = getApplication<Application>()
+            app.stopService(Intent(app, io.freewheel.launcher.overlay.RideOverlayService::class.java))
+        } catch (_: Exception) {}
     }
 
     fun stopWorkoutRide() {
@@ -416,6 +545,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     override fun onCleared() {
         super.onCleared()
+        stopSensorTest()
         rideSessionManager.destroy()
         screenSaverManager.destroy()
         workoutAppRegistry.stop()

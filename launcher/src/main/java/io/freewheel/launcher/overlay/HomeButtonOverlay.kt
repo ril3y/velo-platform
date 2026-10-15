@@ -71,6 +71,17 @@ class HomeButtonOverlay : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // onCreate may have failed to add the zone (overlay permission not granted
+        // yet). Retry on each start request so granting it later takes effect
+        // without a reboot. No-op once the zone exists.
+        if (edgeView == null && OverlayPermission.canDrawOverlays(this)) {
+            try {
+                if (windowManager == null) windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+                createEdgeZone()
+            } catch (e: Exception) {
+                Log.e(TAG, "Retry creating edge zone failed", e)
+            }
+        }
         return START_STICKY
     }
 

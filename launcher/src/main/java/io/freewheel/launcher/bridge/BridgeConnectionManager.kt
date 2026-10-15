@@ -5,14 +5,32 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.RemoteCallbackList
+import android.os.SystemClock
 import android.util.Log
 import io.freewheel.fit.IWorkoutListener
 import io.freewheel.launcher.session.SessionState
 import io.freewheel.ucb.BikeServiceClient
+import io.freewheel.ucb.BridgeDiagnostics
+import io.freewheel.ucb.BridgeDiagnostics.LinkState
 import io.freewheel.ucb.SensorData
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+
+/** Snapshot of IBikeService.getDiagnostics(); [available] is false for bridges without it. */
+data class BridgeDiagSnapshot(
+    val available: Boolean = false,
+    val portDev: String? = null,
+    val baud: Int = 0,
+    val portOpen: Boolean = false,
+    val bytesRead: Long = 0,
+    val framesOk: Long = 0,
+    val crcErrors: Long = 0,
+    val lastFrameAgeMs: Long = -1,
+    val fwState: Int = -1,
+    val fwName: String = "Unknown",
+    val holders: String = "none",
+)
 
 /**
  * Application-scoped singleton that owns the persistent BikeServiceClient connection.
@@ -24,6 +42,7 @@ class BridgeConnectionManager(private val context: Context) {
     companion object {
         private const val TAG = "BridgeConnectionMgr"
         private const val CRASH_GRACE_MS = 3000L
+        private const val DIAG_POLL_MS = 2000L
     }
 
     private val handler = Handler(Looper.getMainLooper())
@@ -33,8 +52,29 @@ class BridgeConnectionManager(private val context: Context) {
     private val _sensorData = MutableStateFlow(SensorData())
     val sensorData: StateFlow<SensorData> = _sensorData.asStateFlow()
 
+    /**
+     * True once the AIDL service is bound / the bridge reports the port open. This does NOT
+     * mean the bike is talking — use [linkState] for anything shown to the user.
+     */
     private val _connected = MutableStateFlow(false)
     val connected: StateFlow<Boolean> = _connected.asStateFlow()
+
+    // --- Link diagnostics (polled from the bridge) ---
+    private val _linkState = MutableStateFlow(LinkState.BRIDGE_NOT_RUNNING)
+    val linkState: StateFlow<LinkState> = _linkState.asStateFlow()
+
+    private val _diagnostics = MutableStateFlow(BridgeDiagSnapshot())
+    val diagnostics: StateFlow<BridgeDiagSnapshot> = _diagnostics.asStateFlow()
+
+    /** Human-readable reason for the last failed [startWorkout], or null if it succeeded. */
+    @Volatile
+    var lastStartWorkoutError: String? = null
+        private set
+
+    // Fallback for bridges without getDiagnostics(): last sensor callback time
+    @Volatile
+    private var lastSensorDataMs = 0L
+    private var diagPolling = false
 
     private val _firmwareState = MutableStateFlow(-1)
     val firmwareState: StateFlow<Int> = _firmwareState.asStateFlow()
@@ -93,6 +133,7 @@ class BridgeConnectionManager(private val context: Context) {
 
     private val listener = object : BikeServiceClient.ListenerAdapter() {
         override fun onSensorData(data: SensorData) {
+            lastSensorDataMs = SystemClock.elapsedRealtime()
             _sensorData.value = data
             broadcastSensorData(data)
         }
@@ -154,10 +195,12 @@ class BridgeConnectionManager(private val context: Context) {
             if (hwId >= 0) {
                 _hardwareId.value = hwId
             }
+            refreshDiagnostics()
         }
 
         override fun onServiceDisconnected() {
             _connected.value = false
+            refreshDiagnostics()
         }
 
         override fun onOtaProgress(phase: Int, blockCurrent: Int, blockTotal: Int) {
@@ -184,17 +227,86 @@ class BridgeConnectionManager(private val context: Context) {
     fun connect() {
         client.addListener(listener)
         client.bind()
+        startDiagnosticsPolling()
     }
 
     fun disconnect() {
+        stopDiagnosticsPolling()
         client.removeListener(listener)
         client.unbind()
+        refreshDiagnostics()
+    }
+
+    // --- Link diagnostics ---
+
+    private val diagPoll = object : Runnable {
+        override fun run() {
+            refreshDiagnostics()
+            if (diagPolling) handler.postDelayed(this, DIAG_POLL_MS)
+        }
+    }
+
+    private fun startDiagnosticsPolling() {
+        if (diagPolling) return
+        diagPolling = true
+        handler.post(diagPoll)
+    }
+
+    private fun stopDiagnosticsPolling() {
+        diagPolling = false
+        handler.removeCallbacks(diagPoll)
+    }
+
+    /** Query the bridge and recompute [linkState]. Cheap; safe to call on the main thread. */
+    fun refreshDiagnostics() {
+        val bound = client.isBound
+        val bundle = if (bound) client.getDiagnostics() else null
+        if (bundle != null) {
+            val snap = BridgeDiagSnapshot(
+                available = true,
+                portDev = bundle.getString(BridgeDiagnostics.KEY_PORT_DEV),
+                baud = bundle.getInt(BridgeDiagnostics.KEY_BAUD),
+                portOpen = bundle.getBoolean(BridgeDiagnostics.KEY_PORT_OPEN),
+                bytesRead = bundle.getLong(BridgeDiagnostics.KEY_BYTES_READ),
+                framesOk = bundle.getLong(BridgeDiagnostics.KEY_FRAMES_OK),
+                crcErrors = bundle.getLong(BridgeDiagnostics.KEY_CRC_ERRORS),
+                lastFrameAgeMs = bundle.getLong(BridgeDiagnostics.KEY_LAST_FRAME_AGE_MS, -1),
+                fwState = bundle.getInt(BridgeDiagnostics.KEY_FW_STATE, -1),
+                fwName = bundle.getString(BridgeDiagnostics.KEY_FW_NAME) ?: "Unknown",
+                holders = bundle.getString(BridgeDiagnostics.KEY_HOLDERS) ?: "none",
+            )
+            _diagnostics.value = snap
+            _linkState.value = BridgeDiagnostics.classify(true, snap.portOpen, snap.lastFrameAgeMs)
+        } else {
+            // Not bound, or an older bridge without getDiagnostics(): fall back to the time of
+            // the last sensor callback (only arrives while a workout is streaming).
+            val age = if (lastSensorDataMs > 0) SystemClock.elapsedRealtime() - lastSensorDataMs else -1L
+            _diagnostics.value = BridgeDiagSnapshot(available = false, lastFrameAgeMs = age)
+            _linkState.value = BridgeDiagnostics.classify(bound, bound && _connected.value, age)
+        }
     }
 
     // --- Workout control ---
 
     fun startWorkout(): Boolean {
-        return client.startWorkout()
+        val ok = client.startWorkout()
+        lastStartWorkoutError = if (ok) null else describeStartFailure()
+        if (!ok) Log.w(TAG, "startWorkout failed: $lastStartWorkoutError")
+        return ok
+    }
+
+    private fun describeStartFailure(): String {
+        if (!client.isBound) return "FreewheelBridge service is not running"
+        val owner = try {
+            client.service?.sessionOwner
+        } catch (_: Exception) {
+            null
+        }
+        return when {
+            owner == null -> "bridge session not claimed yet \u2013 try again in a few seconds"
+            owner != context.packageName -> "bike session is held by $owner"
+            else -> "bridge refused the request (see logcat tag SerialBridge)"
+        }
     }
 
     fun stopWorkout(): Boolean {

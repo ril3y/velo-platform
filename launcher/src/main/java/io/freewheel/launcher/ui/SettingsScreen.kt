@@ -62,6 +62,8 @@ fun SettingsScreen(
     // Diagnostics
     diagnosticsState: DiagnosticsState = DiagnosticsState(),
     onToggleRawMonitor: (Boolean) -> Unit = {},
+    onStartSensorTest: () -> Unit = {},
+    onStopSensorTest: () -> Unit = {},
     // OTA firmware flash
     otaFlashState: OtaFlashState = OtaFlashState(),
     onPickFirmwareFile: () -> Unit = {},
@@ -82,6 +84,7 @@ fun SettingsScreen(
     onInstallUpdate: () -> Unit = {},
     availableUpdates: List<AppUpdate> = emptyList(),
     onDownloadAppUpdate: (AppUpdate) -> Unit = {},
+    updateErrorMessage: String? = null,
 ) {
     var selectedCategory by remember { mutableStateOf(SettingsCategory.SERVICES) }
 
@@ -166,7 +169,9 @@ fun SettingsScreen(
                         ServiceRow(
                             name = "FreewheelBridge (TCP:9999)",
                             running = serviceStatus.serialBridgeRunning || serviceStatus.serialBridgeTcpAlive,
-                            detail = if (serviceStatus.serialBridgeTcpAlive) "Connected" else "Not responding",
+                            // TCP alive only proves the service is up; the bike link is separate
+                            detail = (if (serviceStatus.serialBridgeTcpAlive) "Service responding" else "Not responding") +
+                                " \u2022 " + diagnosticsState.linkState.label,
                             onRestart = onRestartBridge,
                         )
                         ToggleRow(
@@ -248,6 +253,8 @@ fun SettingsScreen(
                         DiagnosticsPane(
                             state = diagnosticsState,
                             onToggleRawMonitor = onToggleRawMonitor,
+                            onStartSensorTest = onStartSensorTest,
+                            onStopSensorTest = onStopSensorTest,
                         )
                     }
                     SettingsCategory.UCB_FIRMWARE -> {
@@ -283,6 +290,13 @@ fun SettingsScreen(
                         InfoRow("Package", BuildConfig.APPLICATION_ID)
                         InfoRow("Android", "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
                         InfoRow("Device", "${Build.MANUFACTURER} ${Build.MODEL}")
+                        Text(
+                            "Unofficial community project, not affiliated with Bowflex/Nautilus/JRNY. " +
+                                "Releases from v1.5.0 on are untested on real hardware. Use at your own risk; provided AS IS.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextMuted,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
 
                         Spacer(Modifier.height(16.dp))
                         PaneTitle("Updates")
@@ -437,7 +451,7 @@ fun SettingsScreen(
                                 Column(
                                     verticalArrangement = Arrangement.spacedBy(8.dp),
                                 ) {
-                                    Text("Update check failed.", color = StatusRed)
+                                    Text(updateErrorMessage ?: "Update check failed.", color = StatusRed)
                                     OutlinedButton(
                                         onClick = onCheckForUpdate,
                                         colors = ButtonDefaults.outlinedButtonColors(contentColor = NeonAccent),

@@ -81,7 +81,7 @@ class SettingsScreenTest {
         setSettingsScreen()
 
         composeTestRule.onNodeWithText("Diagnostics").performClick()
-        composeTestRule.onNodeWithText("UCB Disconnected").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Bridge not running").assertIsDisplayed()
     }
 
     @Test
