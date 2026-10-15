@@ -44,5 +44,6 @@ android {
 
 dependencies {
     implementation(project(":ucblib"))
+    testImplementation("junit:junit:4.13.2")
 }
 

@@ -4,12 +4,19 @@ import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.Service;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
+import android.net.Uri;
 import android.os.Binder;
 import android.os.Build;
+import android.os.Bundle;
 import android.os.IBinder;
 import android.os.RemoteCallbackList;
 import android.os.RemoteException;
+import android.os.SystemClock;
+import android.provider.Settings;
 import android.util.Log;
 import java.io.File;
 import java.io.InputStream;
@@ -19,10 +26,13 @@ import java.net.Socket;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.io.FileInputStream;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.zip.CRC32;
 
+import io.freewheel.ucb.BridgeDiagnostics;
 import io.freewheel.ucb.MfgTestCommand;
 import io.freewheel.ucb.OtaFirmwareFile;
 import io.freewheel.ucb.OtaFlashSession;
@@ -32,12 +42,14 @@ import io.freewheel.ucb.UcbMessageIds;
  * Direct serial-to-TCP bridge service with AIDL bike sensor interface.
  * Opens /dev/ttyS4 at 230400 baud via JNI and serves it on TCP:9999.
  * Also exposes IBikeService AIDL for direct programmatic access to sensor data.
+ *
+ * The device/baud can be overridden with Settings.Global "freewheel_serial_dev" /
+ * "freewheel_serial_baud" (validated, see {@link BridgeDiag}); defaults are unchanged.
+ * Every 5s a "DIAG ..." line is logged at INFO (format is a contract with the installer).
  */
 public class BridgeService extends Service {
     private static final String TAG = "SerialBridge";
     private static final String CHANNEL_ID = "serial_bridge";
-    private static final String SERIAL_DEVICE = "/dev/ttyS4";
-    private static final int BAUD_RATE = 230400;
     private static final int TCP_PORT = 9999;
     private static final int BUFFER_SIZE = 1024;
 
@@ -79,7 +91,29 @@ public class BridgeService extends Service {
     private volatile int ucbHardwareId = -1;
     private volatile String ucbSerialNumber = null;
     private volatile boolean serialConnected = false;
-    private volatile boolean workoutPending = false; // waiting for SELECTION state to start workout
+    private volatile boolean workoutPending = false; // re-send STREAMING_CONTROL enable once UCB reaches SELECTION/WORKOUT
+
+    // Serial device/baud for the current bridge cycle (Settings.Global overrides, validated)
+    private volatile String serialDev = BridgeDiag.DEFAULT_SERIAL_DEV;
+    private volatile int baudRate = BridgeDiag.DEFAULT_BAUD;
+    private volatile boolean portOpen = false;
+    private final Object serialCloseLock = new Object();
+
+    // Link diagnostics (cumulative since service start). Each counter has a single writer:
+    // the serial reader thread.
+    private volatile long totalBytesRead = 0;
+    private volatile long validFrames = 0;
+    private volatile long crcErrors = 0;           // CRC mismatches + undecodable/short frames
+    private volatile long lastValidFrameMs = 0;    // SystemClock.elapsedRealtime(), 0 = never
+    private volatile String portHolders = "none";  // other processes holding the serial device
+    private volatile long lastHolderScanMs = 0;
+    private final BridgeDiag.OnceLimiter unexpectedFrameLog = new BridgeDiag.OnceLimiter();
+    private static final long LINK_FRESH_MS = 5000;
+    private static final long HOLDER_SCAN_UNHEALTHY_MS = 30000;
+    private static final long HOLDER_SCAN_HEALTHY_MS = 300000;
+
+    private BroadcastReceiver shutdownReceiver;
+    private BroadcastReceiver packageReceiver;
 
     // Frame accumulator for parsing incoming UCB frames
     private final byte[] frameAccumBuf = new byte[512];
@@ -273,6 +307,11 @@ public class BridgeService extends Service {
                 Log.d(TAG, "Queued raw command: " + frame.length + " bytes");
             }
         }
+
+        @Override
+        public Bundle getDiagnostics() {
+            return buildDiagnosticsBundle();
+        }
     };
 
     private boolean isCallerSessionOwner() {
@@ -292,6 +331,7 @@ public class BridgeService extends Service {
         Log.d(TAG, "BridgeService starting - direct serial mode with AIDL v3.0");
         createNotificationChannel();
         startForeground(2, buildNotification("Starting..."));
+        registerSystemReceivers();
         startWatchdog();
         startBridge();
         startHrm();
@@ -306,6 +346,7 @@ public class BridgeService extends Service {
     public void onDestroy() {
         super.onDestroy();
         running = false;
+        unregisterSystemReceivers();
         if (watchdogTimer != null) {
             watchdogTimer.cancel();
             watchdogTimer = null;
@@ -346,8 +387,227 @@ public class BridgeService extends Service {
                         handleWorkoutTimeout();
                     }
                 }
+                // Never let a diagnostics failure kill the watchdog Timer thread
+                try {
+                    diagnosticsTick();
+                } catch (Throwable t) {
+                    Log.w(TAG, "Diagnostics tick failed: " + t);
+                }
             }
         }, 5000, 5000);
+    }
+
+    // --- Link diagnostics ---
+
+    private void diagnosticsTick() {
+        if (!running) return;
+        long now = SystemClock.elapsedRealtime();
+        long age = BridgeDiag.frameAgeMs(lastValidFrameMs, now);
+        boolean healthy = age >= 0 && age <= LINK_FRESH_MS;
+
+        // Scan for other processes holding the UART: first tick after start, then every
+        // 30s while no valid frames are arriving (every 5 min, report-only, while healthy).
+        long interval = healthy ? HOLDER_SCAN_HEALTHY_MS : HOLDER_SCAN_UNHEALTHY_MS;
+        if (lastHolderScanMs == 0 || now - lastHolderScanMs >= interval) {
+            boolean firstScan = lastHolderScanMs == 0;
+            lastHolderScanMs = now;
+            scanPortHolders(firstScan || !healthy);
+        }
+
+        int fw = currentFirmwareState;
+        Log.i(TAG, BridgeDiag.formatDiagLine(serialDev, baudRate, portOpen, totalBytesRead,
+            validFrames, crcErrors, age, fw, firmwareStateName(fw), portHolders));
+    }
+
+    private Bundle buildDiagnosticsBundle() {
+        int fw = currentFirmwareState;
+        Bundle b = new Bundle();
+        b.putString(BridgeDiagnostics.KEY_PORT_DEV, serialDev);
+        b.putInt(BridgeDiagnostics.KEY_BAUD, baudRate);
+        b.putBoolean(BridgeDiagnostics.KEY_PORT_OPEN, portOpen);
+        b.putLong(BridgeDiagnostics.KEY_BYTES_READ, totalBytesRead);
+        b.putLong(BridgeDiagnostics.KEY_FRAMES_OK, validFrames);
+        b.putLong(BridgeDiagnostics.KEY_CRC_ERRORS, crcErrors);
+        b.putLong(BridgeDiagnostics.KEY_LAST_FRAME_AGE_MS,
+            BridgeDiag.frameAgeMs(lastValidFrameMs, SystemClock.elapsedRealtime()));
+        b.putInt(BridgeDiagnostics.KEY_FW_STATE, fw);
+        b.putString(BridgeDiagnostics.KEY_FW_NAME, fw >= 0 ? firmwareStateName(fw) : "Unknown");
+        b.putString(BridgeDiagnostics.KEY_HOLDERS, portHolders);
+        return b;
+    }
+
+    /**
+     * Find other processes with the serial device open (/proc/<pid>/fd symlinks). The bridge
+     * runs as uid 1000, so it can inspect system-uid processes such as a still-running stock
+     * com.nautilus.* app; other uids are unreadable and skipped. Two readers on one UART steal
+     * bytes from each other, which shows up as CRC errors / zero sensor values.
+     *
+     * Only com.nautilus.* holders are ever killed, and only when {@code allowKill}.
+     */
+    private void scanPortHolders(boolean allowKill) {
+        String dev = serialDev;
+        int myPid = android.os.Process.myPid();
+        List<BridgeDiag.Holder> holders = new ArrayList<>();
+        File[] procs = new File("/proc").listFiles();
+        if (procs == null) return;
+        byte[] buf = new byte[256];
+        for (File proc : procs) {
+            int pid = BridgeDiag.parsePid(proc.getName());
+            if (pid <= 0 || pid == myPid) continue;
+            File[] fds = new File(proc, "fd").listFiles();
+            if (fds == null) continue; // other uid (no permission) or process exited
+            for (File fd : fds) {
+                String target;
+                try {
+                    target = android.system.Os.readlink(fd.getPath());
+                } catch (Exception e) {
+                    continue;
+                }
+                if (BridgeDiag.fdTargetMatches(target, dev)) {
+                    holders.add(new BridgeDiag.Holder(pid, readCmdline(pid, buf)));
+                    break;
+                }
+            }
+        }
+        portHolders = BridgeDiag.formatHolders(holders);
+
+        for (BridgeDiag.Holder h : holders) {
+            if (!BridgeDiag.isKillableHolder(h.cmdline)) {
+                Log.w(TAG, dev + " is also open in pid " + h.pid + " (" + h.cmdline
+                    + ") — not a com.nautilus.* process, leaving it alone");
+            } else if (allowKill) {
+                Log.w(TAG, dev + " is also open in stock app pid " + h.pid + " (" + h.cmdline
+                    + ") — killing it so it stops competing for the UART");
+                try {
+                    android.os.Process.killProcess(h.pid);
+                } catch (Exception e) {
+                    Log.w(TAG, "killProcess(" + h.pid + ") failed: " + e.getMessage());
+                }
+            } else {
+                Log.w(TAG, dev + " is also open in stock app pid " + h.pid + " (" + h.cmdline
+                    + ") — frames are arriving, not killing");
+            }
+        }
+    }
+
+    private static String readCmdline(int pid, byte[] buf) {
+        FileInputStream in = null;
+        try {
+            in = new FileInputStream("/proc/" + pid + "/cmdline");
+            int n = in.read(buf);
+            return BridgeDiag.cmdlineFromBytes(buf, n);
+        } catch (Exception e) {
+            return "?";
+        } finally {
+            if (in != null) {
+                try { in.close(); } catch (Exception e) {}
+            }
+        }
+    }
+
+    // --- System broadcasts (registered dynamically: implicit broadcasts don't reach
+    // manifest receivers on Android 8+, and this service is always running) ---
+
+    private void registerSystemReceivers() {
+        shutdownReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                final PendingResult pending = goAsync();
+                new Thread(() -> {
+                    try {
+                        handleShutdown();
+                    } catch (Throwable t) {
+                        Log.w(TAG, "Shutdown handling failed: " + t);
+                    } finally {
+                        pending.finish();
+                    }
+                }, "BridgeShutdown").start();
+            }
+        };
+        try {
+            registerReceiver(shutdownReceiver, new IntentFilter(Intent.ACTION_SHUTDOWN));
+        } catch (Exception e) {
+            Log.w(TAG, "Cannot register shutdown receiver: " + e.getMessage());
+            shutdownReceiver = null;
+        }
+
+        // Launcher (re)installed: restore its overlay appop etc. (needs system uid)
+        packageReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                Uri data = intent.getData();
+                String pkg = data != null ? data.getSchemeSpecificPart() : null;
+                if (!SelfHeal.LAUNCHER_PKG.equals(pkg)) return;
+                final String action = intent.getAction();
+                final Context appContext = getApplicationContext();
+                final PendingResult pending = goAsync();
+                new Thread(() -> {
+                    try {
+                        SelfHeal.runAll(appContext, action);
+                    } catch (Throwable t) {
+                        Log.w(TAG, "Self-heal failed: " + t);
+                    } finally {
+                        pending.finish();
+                    }
+                }, "SelfHealPkg").start();
+            }
+        };
+        IntentFilter pf = new IntentFilter();
+        pf.addAction(Intent.ACTION_PACKAGE_ADDED);
+        pf.addAction(Intent.ACTION_PACKAGE_REPLACED);
+        pf.addDataScheme("package");
+        try {
+            registerReceiver(packageReceiver, pf);
+        } catch (Exception e) {
+            Log.w(TAG, "Cannot register package receiver: " + e.getMessage());
+            packageReceiver = null;
+        }
+    }
+
+    private void unregisterSystemReceivers() {
+        if (shutdownReceiver != null) {
+            try { unregisterReceiver(shutdownReceiver); } catch (Exception e) {}
+            shutdownReceiver = null;
+        }
+        if (packageReceiver != null) {
+            try { unregisterReceiver(packageReceiver); } catch (Exception e) {}
+            packageReceiver = null;
+        }
+    }
+
+    /**
+     * Device is powering off / rebooting (freewheel issue #1: bike powers back on after
+     * shutdown). DIAGNOSTIC / MITIGATION ONLY: stop an active workout through the existing
+     * stop path (same STREAMING_CONTROL disable as a normal stop), let the writer thread flush
+     * the queue, then close the UART cleanly. We deliberately do NOT send any power, sleep or
+     * SYSTEM_CONTROL command to the UCB: those payloads are unverified and could not be tested
+     * on hardware.
+     */
+    private void handleShutdown() {
+        Log.i(TAG, "Shutdown received (workout=" + workoutActive + " fw=" + currentFirmwareState
+            + " " + firmwareStateName(currentFirmwareState) + ")");
+        synchronized (this) {
+            if (workoutActive) {
+                doStopWorkout("shutdown");
+            }
+        }
+        // The writer thread drains the queue about once per second.
+        long deadline = SystemClock.elapsedRealtime() + 1500;
+        while (!serialWriteQueue.isEmpty() && SystemClock.elapsedRealtime() < deadline) {
+            try { Thread.sleep(50); } catch (InterruptedException e) { break; }
+        }
+        if (!serialWriteQueue.isEmpty()) {
+            Log.w(TAG, "Shutdown: " + serialWriteQueue.size() + " queued frame(s) not flushed");
+        }
+        try { Thread.sleep(100); } catch (InterruptedException e) {}
+        try {
+            OutputStream out = serialOutputStream;
+            if (out != null) out.flush();
+        } catch (Exception e) {}
+
+        running = false;
+        closeSerialPort();
+        Log.i(TAG, "Shutdown received \u2013 serial closed");
     }
 
     private void handleWorkoutTimeout() {
@@ -360,9 +620,6 @@ public class BridgeService extends Service {
     }
 
     // --- Workout Control ---
-
-    private static final int FW_STATE_SELECTION = 8;
-    private static final int FW_STATE_WORKOUT = 9;
 
     // Shared outgoing message counter (used by writer thread and command methods)
     private int outSeq = 0;
@@ -378,10 +635,7 @@ public class BridgeService extends Service {
         workoutPending = false;
         lastHeartbeatTime = System.currentTimeMillis();
 
-        // JRNY sends STREAMING_CONTROL as POST (msgType=0x02, Purpose.POST)
-        byte[] streamPayload = new byte[]{(byte) MSG_TYPE_NOTIFICATION, 0x07, (byte) nextSeq(), 0x01, 0x00};
-        serialWriteQueue.offer(buildUcbFrame(streamPayload));
-        Log.d(TAG, "Queued STREAMING_CONTROL enable (POST)");
+        queueStreamingEnable();
 
         // JRNY sends WORKOUT_BLE_DATA as POST (msgType=0x02) at 1Hz from engine thread.
         // The UCB transitions SELECTION→WORKOUT when it receives this.
@@ -394,8 +648,26 @@ public class BridgeService extends Service {
         serialWriteQueue.offer(buildUcbFrame(payload));
         Log.d(TAG, "Queued WORKOUT_BLE_DATA (POST, 51 bytes)");
 
+        // In a known non-streaming state (e.g. SLEEP, MFG, SBC_DISCONNECTED) the UCB may ignore
+        // the enable above. Everything above is still sent exactly as before; we just remember
+        // to re-send the SAME enable once a heartbeat reports SELECTION/WORKOUT.
+        // Unknown state (-1) or already SELECTION/WORKOUT: no change from previous behaviour.
+        int fw = currentFirmwareState;
+        if (BridgeDiag.shouldDeferStreaming(fw)) {
+            workoutPending = true;
+            Log.w(TAG, "doStartWorkout: UCB is in " + firmwareStateName(fw) + " (" + fw
+                + ") — will re-send STREAMING_CONTROL enable when it reaches SELECTION/WORKOUT");
+        }
+
         broadcastWorkoutState(true, "started");
         return true;
+    }
+
+    /** STREAMING_CONTROL enable — JRNY sends it as POST (msgType=0x02, Purpose.POST). */
+    private void queueStreamingEnable() {
+        byte[] streamPayload = new byte[]{(byte) MSG_TYPE_NOTIFICATION, 0x07, (byte) nextSeq(), 0x01, 0x00};
+        serialWriteQueue.offer(buildUcbFrame(streamPayload));
+        Log.d(TAG, "Queued STREAMING_CONTROL enable (POST)");
     }
 
     /**
@@ -794,16 +1066,23 @@ public class BridgeService extends Service {
         // frameData is the raw bytes between STX and ETX (hex-encoded)
         // Decode hex string
         String hexStr = new String(frameData, 0, len);
-        if (hexStr.length() < 2 || hexStr.length() % 2 != 0) return;
+        if (hexStr.length() < 2 || hexStr.length() % 2 != 0) {
+            crcErrors++;
+            return;
+        }
 
         byte[] decoded;
         try {
             decoded = hexDecode(hexStr);
         } catch (Exception e) {
+            crcErrors++;
             return;
         }
 
-        if (decoded.length < 5) return; // minimum: msgType(1) + msgId(1) + counter(1) + CRC32(4)
+        if (decoded.length < 5) { // minimum: msgType(1) + msgId(1) + counter(1) + CRC32(4)
+            crcErrors++;
+            return;
+        }
 
         // Verify CRC32
         int dataLen = decoded.length - 4;
@@ -816,7 +1095,12 @@ public class BridgeService extends Service {
                       | ((long)(decoded[dataLen + 2] & 0xFF) << 8)
                       | ((long)(decoded[dataLen + 3] & 0xFF));
 
-        if (calcCrc != frameCrc) return; // CRC mismatch
+        if (calcCrc != frameCrc) { // CRC mismatch
+            crcErrors++;
+            return;
+        }
+        validFrames++;
+        lastValidFrameMs = SystemClock.elapsedRealtime();
 
         int msgType = decoded[0] & 0xFF;
         int msgId = decoded[1] & 0xFF;
@@ -845,11 +1129,15 @@ public class BridgeService extends Service {
                     Log.d(TAG, "Firmware state: " + oldState + " -> " + fwState + " (" + stateName + ")");
                     broadcastFirmwareState(fwState, stateName);
 
-                    // If a workout was pending and UCB just reached SELECTION, fire it now
-                    if (fwState == FW_STATE_SELECTION && workoutPending) {
-                        Log.d(TAG, "UCB reached SELECTION — firing deferred workout start");
+                    // Workout was started while the UCB was in a non-streaming state: re-send
+                    // the same STREAMING_CONTROL enable once now that it can stream.
+                    if (BridgeDiag.shouldFireDeferredStreaming(workoutPending, workoutActive, oldState, fwState)) {
                         synchronized (BridgeService.this) {
-                            doStartWorkout();
+                            if (workoutPending && workoutActive) {
+                                workoutPending = false;
+                                Log.i(TAG, "UCB reached " + stateName + " — re-sending deferred STREAMING_CONTROL enable");
+                                queueStreamingEnable();
+                            }
                         }
                     }
                 }
@@ -913,6 +1201,16 @@ public class BridgeService extends Service {
             }
         }
 
+        // Surface frames we don't act on (once per type/id/len) instead of dropping silently
+        boolean handled = (msgType == MSG_TYPE_NOTIFICATION
+                && (msgId == MSG_ID_STREAM_NTFCN || msgId == MSG_ID_SYSTEM_HEART_BEAT))
+            || msgId == MSG_ID_SYSTEM_DATA || msgId == 0x16 || msgId == 0x15;
+        if (!handled && unexpectedFrameLog.firstTime("frame:" + msgType + ":" + msgId + ":" + dataLen)) {
+            Log.w(TAG, "Unhandled UCB frame type=" + msgType + " id=0x" + String.format("%02X", msgId)
+                + " (" + UcbMessageIds.nameOf(msgId) + ") len=" + dataLen
+                + " — ignored (logged once per type/id/len)");
+        }
+
         // Broadcast raw frame if monitoring enabled
         if (rawFrameMonitorEnabled) {
             byte[] rawData = new byte[dataLen];
@@ -936,7 +1234,13 @@ public class BridgeService extends Service {
         // Data starts at offset 3 (after msgType, msgId, counter)
         int dataStart = 3;
         int payloadLen = dataLen - dataStart;
-        if (payloadLen < STREAM_NTFCN_DATA_LEN) return;
+        if (payloadLen < STREAM_NTFCN_DATA_LEN) {
+            if (unexpectedFrameLog.firstTime("short_stream:" + payloadLen)) {
+                Log.w(TAG, "STREAM_NTFCN payload " + payloadLen + " bytes < " + STREAM_NTFCN_DATA_LEN
+                    + " — dropped (logged once per length)");
+            }
+            return;
+        }
 
         // Resistance: int32 BE at offset 0
         int resistance = ((decoded[dataStart] & 0xFF) << 24)
@@ -1063,13 +1367,43 @@ public class BridgeService extends Service {
         mainThread.start();
     }
 
+    /** Read (and validate) the Settings.Global serial overrides; invalid values fall back to defaults. */
+    private void loadSerialConfig() {
+        String rawDev = null;
+        String rawBaud = null;
+        try {
+            rawDev = Settings.Global.getString(getContentResolver(), BridgeDiag.SETTING_SERIAL_DEV);
+            rawBaud = Settings.Global.getString(getContentResolver(), BridgeDiag.SETTING_SERIAL_BAUD);
+        } catch (Exception e) {
+            Log.w(TAG, "Cannot read serial overrides: " + e.getMessage());
+        }
+        String dev = BridgeDiag.resolveSerialDev(rawDev);
+        int baud = BridgeDiag.resolveBaud(rawBaud);
+        if (rawDev != null && !rawDev.trim().equals(dev)) {
+            Log.w(TAG, "Ignoring invalid " + BridgeDiag.SETTING_SERIAL_DEV + "=" + rawDev + ", using " + dev);
+        }
+        if (rawBaud != null && !rawBaud.trim().equals(String.valueOf(baud))) {
+            Log.w(TAG, "Ignoring invalid " + BridgeDiag.SETTING_SERIAL_BAUD + "=" + rawBaud + ", using " + baud);
+        }
+        if (!dev.equals(serialDev) || baud != baudRate) {
+            Log.i(TAG, "Serial config changed: " + serialDev + "@" + baudRate + " -> " + dev + "@" + baud);
+            lastHolderScanMs = 0; // rescan holders for the new device
+        }
+        serialDev = dev;
+        baudRate = baud;
+    }
+
     private void runBridgeCycle() {
+        loadSerialConfig();
+        final String device = serialDev;
+        final int baud = baudRate;
+
         // Step 1: chmod and open serial port
-        Log.d(TAG, "Opening " + SERIAL_DEVICE + " @ " + BAUD_RATE);
+        Log.d(TAG, "Opening " + device + " @ " + baud);
         updateNotification("Opening serial port...");
 
         try {
-            Runtime.getRuntime().exec("chmod 666 " + SERIAL_DEVICE).waitFor();
+            Runtime.getRuntime().exec(new String[]{"chmod", "666", device}).waitFor();
         } catch (Exception e) {
             Log.w(TAG, "chmod failed (may be ok): " + e.getMessage());
         }
@@ -1080,7 +1414,7 @@ public class BridgeService extends Service {
             Log.d(TAG, "Trying ucbsystemdata serial port lib...");
             com.nautilus.ucbsystemdata.android_serialport_api.SerialPort ucbPort =
                 new com.nautilus.ucbsystemdata.android_serialport_api.SerialPort(
-                    new File(SERIAL_DEVICE), BAUD_RATE, 0);
+                    new File(device), baud, 0);
             serialPortObj = ucbPort;
             serialInputStream = ucbPort.getInputStream();
             serialOutputStream = ucbPort.getOutputStream();
@@ -1096,7 +1430,7 @@ public class BridgeService extends Service {
                 Log.d(TAG, "Trying serial_portx lib...");
                 com.nautilus.serial.android_serialport_api.SerialPort sPort =
                     new com.nautilus.serial.android_serialport_api.SerialPort(
-                        new File(SERIAL_DEVICE), BAUD_RATE, 0);
+                        new File(device), baud, 0);
                 serialPortObj = sPort;
                 serialInputStream = sPort.getInputStream();
                 serialOutputStream = sPort.getOutputStream();
@@ -1108,6 +1442,7 @@ public class BridgeService extends Service {
             }
         }
 
+        portOpen = true;
         broadcastConnectionChanged(true, "serial port opened");
 
         final InputStream serialIn = serialInputStream;
@@ -1202,6 +1537,7 @@ public class BridgeService extends Service {
                         stats[2]++;
                         if (n > 0) {
                             stats[0]++;
+                            totalBytesRead++;
                             accumBuf[accumLen++] = single[0];
 
                             // Also accumulate for AIDL frame parsing
@@ -1326,6 +1662,7 @@ public class BridgeService extends Service {
                 try {
                     parseUcbFrame(frameAccumBuf, frameAccumLen);
                 } catch (Exception e) {
+                    crcErrors++;
                     Log.w(TAG, "Frame parse error: " + e.getMessage());
                 }
             }
@@ -1390,14 +1727,20 @@ public class BridgeService extends Service {
     }
 
     private void closeSerialPort() {
-        if (serialPortObj instanceof com.nautilus.ucbsystemdata.android_serialport_api.SerialPort) {
-            ((com.nautilus.ucbsystemdata.android_serialport_api.SerialPort) serialPortObj).closePort();
-        } else if (serialPortObj instanceof com.nautilus.serial.android_serialport_api.SerialPort) {
-            ((com.nautilus.serial.android_serialport_api.SerialPort) serialPortObj).closePort();
+        // Serialized: shutdown handling may close the port while the bridge thread also does,
+        // and closing the same native fd twice could close an unrelated, reused fd.
+        synchronized (serialCloseLock) {
+            Object port = serialPortObj;
+            serialPortObj = null;
+            portOpen = false;
+            if (port instanceof com.nautilus.ucbsystemdata.android_serialport_api.SerialPort) {
+                ((com.nautilus.ucbsystemdata.android_serialport_api.SerialPort) port).closePort();
+            } else if (port instanceof com.nautilus.serial.android_serialport_api.SerialPort) {
+                ((com.nautilus.serial.android_serialport_api.SerialPort) port).closePort();
+            }
+            serialInputStream = null;
+            serialOutputStream = null;
         }
-        serialPortObj = null;
-        serialInputStream = null;
-        serialOutputStream = null;
     }
 
     private void cleanup() {

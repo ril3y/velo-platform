@@ -22,6 +22,19 @@ public class BootReceiver extends BroadcastReceiver {
 
             // Re-apply iptables OTA blocks (rules don't persist across reboot)
             blockOtaNetwork(context);
+
+            // Launcher overlay appop + GMS/GSF enabled (needs system uid; off the main thread)
+            final PendingResult pending = goAsync();
+            final Context appContext = context.getApplicationContext();
+            new Thread(() -> {
+                try {
+                    SelfHeal.runAll(appContext, "boot");
+                } catch (Throwable t) {
+                    Log.w(TAG, "Self-heal on boot failed: " + t);
+                } finally {
+                    pending.finish();
+                }
+            }, "SelfHealBoot").start();
         }
     }
 
@@ -39,6 +52,12 @@ public class BootReceiver extends BroadcastReceiver {
         for (String pkg : packages) {
             try {
                 int uid = context.getPackageManager().getApplicationInfo(pkg, 0).uid;
+                if (uid < android.os.Process.FIRST_APPLICATION_UID) {
+                    // A shared system uid (e.g. 1000) would drop ALL system traffic,
+                    // including loopback/ADB-over-WiFi — never install that rule.
+                    Log.w(TAG, "Not blocking " + pkg + ": uid " + uid + " is a system uid");
+                    continue;
+                }
                 String uidStr = String.valueOf(uid);
                 // Check if rule exists, add if not
                 Runtime rt = Runtime.getRuntime();
