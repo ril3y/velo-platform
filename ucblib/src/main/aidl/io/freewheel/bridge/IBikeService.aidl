@@ -43,4 +43,8 @@ interface IBikeService {
     // Raw UCB frame monitoring and control
     void setRawFrameMonitoring(boolean enabled);
     void sendRawCommand(in byte[] frame);
+
+    // Link diagnostics (keys: io.freewheel.ucb.BridgeDiagnostics.KEY_*).
+    // Appended last to keep transaction codes of the methods above unchanged.
+    Bundle getDiagnostics();
 }
