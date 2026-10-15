@@ -14,6 +14,7 @@ import io.freewheel.launcher.bridge.BridgeConnectionManager
 import io.freewheel.launcher.data.RideSummary
 import io.freewheel.launcher.data.Workout
 import io.freewheel.launcher.data.WorkoutSegment
+import io.freewheel.launcher.ride.MediaRideHandoff
 import io.freewheel.ucb.RidePhysics
 import io.freewheel.fit.PowerTarget
 import io.freewheel.fit.RideStats
@@ -50,6 +51,7 @@ class RideOverlayService : Service() {
     // Workout info
     private var workoutName = "Free Ride"
     private var workoutId: String? = null
+    private var rideToken = 0L  // links this ride to the launcher's session (MediaRideHandoff)
     private var segments: List<WorkoutSegment> = emptyList()
     private var difficultyMultiplier = 1.0f
 
@@ -96,10 +98,12 @@ class RideOverlayService : Service() {
                     workoutId = workout.id
                     segments = workout.segments
                 }
+                rideToken = intent.getLongExtra(EXTRA_RIDE_TOKEN, 0L)
 
                 startForeground(NOTIFICATION_ID, createNotification())
-                createOverlay()
-                startRide()
+                // If the overlay window can't be added (no overlay permission) the
+                // service is stopping; leave the ride to the launcher's session.
+                if (createOverlay()) startRide()
             }
             ACTION_STOP -> {
                 stopRide()
@@ -132,8 +136,9 @@ class RideOverlayService : Service() {
     }
 
 
+    /** Returns false (and stops the service) if the overlay window could not be added. */
     @Suppress("DEPRECATION")
-    private fun createOverlay() {
+    private fun createOverlay(): Boolean {
         overlayView = buildOverlayView()
 
         val dp = resources.displayMetrics.density
@@ -180,14 +185,17 @@ class RideOverlayService : Service() {
             windowManager?.addView(overlayView, params)
         } catch (e: Exception) {
             android.util.Log.e("RideOverlay", "Failed to add overlay — permission denied?", e)
+            overlayView = null
+            restoreStatusBar()
             stopSelf()
-            return
+            return false
         }
 
         // Right-side effort bar (only for workouts with segments)
         if (segments.isNotEmpty()) {
             createEffortBar()
         }
+        return true
     }
 
     private fun createEffortBar() {
@@ -212,7 +220,13 @@ class RideOverlayService : Service() {
         )
         params.gravity = Gravity.END or Gravity.CENTER_VERTICAL
 
-        windowManager?.addView(bar, params)
+        try {
+            windowManager?.addView(bar, params)
+        } catch (e: Exception) {
+            android.util.Log.e("RideOverlay", "Failed to add effort bar", e)
+            effortBarView = null
+            effortBarOverlay = null
+        }
     }
 
     private fun buildOverlayView(): View {
@@ -454,6 +468,7 @@ class RideOverlayService : Service() {
         lastSampleTime = rideStartTime
         lastPedalingTime = rideStartTime
         powerHistory.clear()
+        MediaRideHandoff.overlayStarted(rideToken)
 
         // Start workout on the bridge
         bridge.startWorkout()
@@ -710,12 +725,30 @@ class RideOverlayService : Service() {
         params.x = (16 * dp).toInt()
         params.y = (16 * dp).toInt()
 
-        windowManager?.addView(btn, params)
+        try {
+            windowManager?.addView(btn, params)
+        } catch (e: Exception) {
+            android.util.Log.e("RideOverlay", "Failed to add mini button", e)
+            miniFab = null
+        }
     }
 
     private fun removeMiniFab() {
-        miniFab?.let { windowManager?.removeView(it) }
+        removeWindow(miniFab)
         miniFab = null
+    }
+
+    /**
+     * Removes an overlay window, ignoring views that were never added or are
+     * already gone. Deliberately not gated on isAttachedToWindow: a view added
+     * moments ago isn't attached until its first traversal, but still must be
+     * removed or its window leaks.
+     */
+    private fun removeWindow(view: View?) {
+        if (view == null) return
+        try {
+            windowManager?.removeView(view)
+        } catch (_: Exception) {}
     }
 
     private fun adjustDifficulty(delta: Float) {
@@ -726,10 +759,19 @@ class RideOverlayService : Service() {
         updateUI()
     }
 
+    /**
+     * Ends the ride from the overlay side (END button, notification action, or
+     * the bridge ending the workout), then tears the overlay down. Idempotent.
+     */
     private fun stopRide() {
-        if (!rideActive) return
-        rideActive = false
+        if (rideActive) {
+            rideActive = false
+            finishRide()
+        }
+        teardownOverlay()
+    }
 
+    private fun finishRide() {
         val elapsed = ((System.currentTimeMillis() - rideStartTime) / 1000).toInt()
 
         val avgPower = if (rideSampleCount > 0) (ridePowerSum / rideSampleCount).toInt() else 0
@@ -738,8 +780,12 @@ class RideOverlayService : Service() {
         val avgSpeed = if (elapsed > 0) distanceMiles / (elapsed / 3600f) else 0f
         val avgHr = if (rideSampleCount > 0 && heartRate > 0) heartRate else 0
 
+        // If the launcher already ended this ride (its End button) it has logged
+        // it and shown a summary, so don't do either again here.
+        val launcherHandled = MediaRideHandoff.isEndedByLauncher(rideToken)
+
         // Only log rides >= 1 minute
-        if (elapsed >= 60) {
+        if (elapsed >= 60 && !launcherHandled) {
             val stats = RideStats.Builder()
                 .startTime(rideStartTime)
                 .durationSeconds(elapsed)
@@ -762,52 +808,44 @@ class RideOverlayService : Service() {
         // Stop media playback
         stopMediaPlayback()
 
-        // Stop workout on bridge
-        bridge.stopWorkout()
-
-        // Store summary for launcher to pick up on resume
-        if (elapsed >= 60) {
-            val summary = RideSummary(
-                durationSeconds = elapsed,
-                calories = calories,
-                avgPower = avgPower,
-                maxPower = rideMaxPower,
-                avgRpm = avgRpm,
-                avgResistance = avgRes,
-                avgHeartRate = avgHr,
-                avgSpeedMph = avgSpeed,
-                distanceMiles = distanceMiles,
-                workoutName = if (segments.isNotEmpty()) workoutName else null,
-            )
-            // Store in shared prefs so the launcher can show summary when it resumes
-            try {
-                val prefs = getSharedPreferences("ride_overlay", Context.MODE_PRIVATE)
-                prefs.edit()
-                    .putInt("summary_duration", summary.durationSeconds)
-                    .putInt("summary_calories", summary.calories)
-                    .putInt("summary_avg_power", summary.avgPower)
-                    .putInt("summary_max_power", summary.maxPower)
-                    .putInt("summary_avg_rpm", summary.avgRpm)
-                    .putInt("summary_avg_resistance", summary.avgResistance)
-                    .putInt("summary_avg_hr", summary.avgHeartRate)
-                    .putFloat("summary_avg_speed", summary.avgSpeedMph)
-                    .putFloat("summary_distance", summary.distanceMiles)
-                    .putString("summary_workout_name", summary.workoutName)
-                    .putLong("summary_timestamp", System.currentTimeMillis())
-                    .apply()
-            } catch (_: Exception) {}
+        // Hand the summary to the launcher and claim the ride BEFORE stopping the
+        // bridge workout: the launcher's session reacts to that stop and must
+        // already see that the overlay logged this ride.
+        if (!launcherHandled) {
+            MediaRideHandoff.markEndedByOverlay(rideToken)
+            if (elapsed >= 60) {
+                val summary = RideSummary(
+                    durationSeconds = elapsed,
+                    calories = calories,
+                    avgPower = avgPower,
+                    maxPower = rideMaxPower,
+                    avgRpm = avgRpm,
+                    avgResistance = avgRes,
+                    avgHeartRate = avgHr,
+                    avgSpeedMph = avgSpeed,
+                    distanceMiles = distanceMiles,
+                    workoutName = if (segments.isNotEmpty()) workoutName else null,
+                )
+                MediaRideHandoff.publishSummary(this, rideToken, summary)
+            }
         }
 
-        // Cleanup overlay
+        // Stop workout on bridge
+        bridge.stopWorkout()
+    }
+
+    /** Removes every overlay window and stops collecting. Safe to call repeatedly. */
+    private fun teardownOverlay() {
         scope.cancel()
-        overlayView?.let { windowManager?.removeView(it) }
+        removeWindow(overlayView)
         overlayView = null
-        effortBarOverlay?.let { windowManager?.removeView(it) }
+        removeWindow(effortBarOverlay)
         effortBarOverlay = null
         effortBarView = null
         removeMiniFab()
         removePauseOverlay()
         restoreStatusBar()
+        MediaRideHandoff.overlayReleased(rideToken)
     }
 
     private fun stopMediaPlayback() {
@@ -827,19 +865,22 @@ class RideOverlayService : Service() {
     }
 
     override fun onDestroy() {
+        if (rideActive) {
+            // Stopped from outside while riding: the launcher ended the ride with
+            // stopService and its session owns logging, the summary and the bridge.
+            // Just release the ride here (no second log, no bridge command).
+            rideActive = false
+            stopMediaPlayback()
+        }
+        teardownOverlay()
         super.onDestroy()
-        overlayView?.let { windowManager?.removeView(it) }
-        effortBarOverlay?.let { windowManager?.removeView(it) }
-        removeMiniFab()
-        removePauseOverlay()
-        scope.cancel()
-        restoreStatusBar()
     }
 
     companion object {
         const val ACTION_START = "io.freewheel.launcher.OVERLAY_START"
         const val ACTION_STOP = "io.freewheel.launcher.OVERLAY_STOP"
         const val ACTION_TOGGLE = "io.freewheel.launcher.OVERLAY_TOGGLE"
+        const val EXTRA_RIDE_TOKEN = "ride_token"
         const val NOTIFICATION_ID = 1001
     }
 }

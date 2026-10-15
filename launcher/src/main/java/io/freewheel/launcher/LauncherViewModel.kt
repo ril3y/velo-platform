@@ -17,6 +17,7 @@ import io.freewheel.launcher.data.RideDatabase
 import io.freewheel.launcher.data.UserProfile
 import io.freewheel.launcher.data.Workout
 import io.freewheel.launcher.data.WorkoutRepository
+import io.freewheel.launcher.ride.MediaRideHandoff
 import io.freewheel.launcher.ride.RideRepository
 import io.freewheel.launcher.ride.RideSessionManager
 import io.freewheel.launcher.service.ServiceMonitor
@@ -177,6 +178,9 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     private val _workoutRideActive = MutableStateFlow(false)
     val workoutRideActive: StateFlow<Boolean> = _workoutRideActive.asStateFlow()
 
+    // Token of the media ride currently linked to RideOverlayService (0 = none)
+    private var mediaRideToken = 0L
+
     init {
         loadApps()
         startServiceMonitor()
@@ -185,6 +189,12 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         checkSetupComplete()
         workoutAppRegistry.start()
         updateManager.checkIfDue()
+        // Show overlay ride summaries as soon as the overlay publishes them (the
+        // launcher may already be in front), plus any left over from before a
+        // process restart (initial emission).
+        viewModelScope.launch {
+            MediaRideHandoff.summaryPublished.collect { checkPendingOverlaySummary() }
+        }
     }
 
     // --- App operations ---
@@ -225,7 +235,13 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     fun forceStopRide(workoutId: String? = null, workoutName: String? = null) {
         _workoutRideActive.value = false
+        // The launcher logs and summarizes this ride; tell the overlay (if a media
+        // ride is running) not to do it again, then stop it. Only reached once the
+        // user has confirmed ending, so "Keep Riding" leaves the overlay alone.
+        if (mediaRideToken != 0L) MediaRideHandoff.markEndedByLauncher(mediaRideToken)
+        mediaRideToken = 0L
         val summary = rideSessionManager.stopRide(workoutId, workoutName)
+        stopRideOverlay()
         if (summary != null) {
             _rideNavigationEvent.value = RideNavigationEvent.ShowSummary(summary)
         } else {
@@ -337,11 +353,24 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     fun launchMediaOverlay() {
         val workout = _selectedWorkout.value ?: return
         val media = _selectedMedia.value ?: return
-        rideSessionManager.startRide()
+        val token = System.currentTimeMillis()
+        mediaRideToken = token
+        rideSessionManager.startRide(
+            endedElsewhere = { MediaRideHandoff.overlayOwns(token) },
+            onExternalStop = { summary ->
+                // Bridge ended the workout (overlay END, notification, watchdog).
+                // If the overlay owned the ride its summary arrives via
+                // MediaRideHandoff; otherwise show ours.
+                if (mediaRideToken == token) mediaRideToken = 0L
+                _workoutRideActive.value = false
+                if (summary != null) rideSessionManager.setOverlaySummary(summary)
+            },
+        )
         val app = getApplication<Application>()
         val serviceIntent = Intent(app, io.freewheel.launcher.overlay.RideOverlayService::class.java).apply {
-            action = "io.freewheel.launcher.OVERLAY_START"
+            action = io.freewheel.launcher.overlay.RideOverlayService.ACTION_START
             putExtra("workout_json", workout.toJson())
+            putExtra(io.freewheel.launcher.overlay.RideOverlayService.EXTRA_RIDE_TOKEN, token)
         }
         app.startForegroundService(serviceIntent)
         app.packageManager.getLaunchIntentForPackage(media.packageName)?.let {
@@ -351,31 +380,22 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     // --- Overlay Summary Recovery ---
+
+    /**
+     * Shows a summary the ride overlay saved when a media ride ended (called from
+     * onResume and whenever the overlay publishes one). Stale or already-shown
+     * summaries are discarded by [MediaRideHandoff.consumeSummary].
+     */
     fun checkPendingOverlaySummary() {
-        val prefs = getApplication<Application>().getSharedPreferences("ride_overlay", Context.MODE_PRIVATE)
-        val timestamp = prefs.getLong("summary_timestamp", 0)
+        val summary = MediaRideHandoff.consumeSummary(getApplication()) ?: return
+        rideSessionManager.setOverlaySummary(summary)
+    }
 
-        if (timestamp > 0) {
-            // Reconstruct the summary from saved data
-            val summary = io.freewheel.launcher.data.RideSummary(
-                durationSeconds = prefs.getInt("summary_duration", 0),
-                calories = prefs.getInt("summary_calories", 0),
-                avgPower = prefs.getInt("summary_avg_power", 0),
-                maxPower = prefs.getInt("summary_max_power", 0),
-                avgRpm = prefs.getInt("summary_avg_rpm", 0),
-                avgResistance = prefs.getInt("summary_avg_resistance", 0),
-                avgHeartRate = prefs.getInt("summary_avg_hr", 0),
-                avgSpeedMph = prefs.getFloat("summary_avg_speed", 0f),
-                distanceMiles = prefs.getFloat("summary_distance", 0f),
-                workoutName = prefs.getString("summary_workout_name", null)
-            )
-
-            // Clear the preferences so the summary is only shown once
-            prefs.edit().clear().apply()
-
-            // Trigger the navigation event to show the summary screen
-            _rideNavigationEvent.value = RideNavigationEvent.ShowSummary(summary)
-        }
+    private fun stopRideOverlay() {
+        try {
+            val app = getApplication<Application>()
+            app.stopService(Intent(app, io.freewheel.launcher.overlay.RideOverlayService::class.java))
+        } catch (_: Exception) {}
     }
 
     fun stopWorkoutRide() {

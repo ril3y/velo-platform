@@ -556,11 +556,9 @@ fun LauncherApp(vm: LauncherViewModel) {
                         }
                     },
                     onEndWorkout = {
+                        // Overlay service is stopped by forceStopRide once the ride
+                        // actually ends (not if the user picks "Keep Riding").
                         vm.stopCurrentRide(selectedWorkout?.id, selectedWorkout?.name)
-                        // Stop overlay service
-                        context.stopService(
-                            android.content.Intent(context, io.freewheel.launcher.overlay.RideOverlayService::class.java)
-                        )
                     },
                 )
             } else HomeScreen(
