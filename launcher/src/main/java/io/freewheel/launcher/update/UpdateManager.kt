@@ -2,6 +2,7 @@ package io.freewheel.launcher.update
 
 import android.app.Application
 import android.content.Intent
+import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.util.Log
@@ -53,7 +54,12 @@ class UpdateManager(
     private val _availableUpdates = MutableStateFlow<List<AppUpdate>>(emptyList())
     val availableUpdates: StateFlow<List<AppUpdate>> = _availableUpdates.asStateFlow()
 
+    /** User-facing reason for the last ERROR status, or null for a generic failure. */
+    private val _errorMessage = MutableStateFlow<String?>(null)
+    val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
+
     private var apkDownloadUrl: String? = null
+    private var apkDownloadUpdate: AppUpdate? = null
     private var downloadedApk: File? = null
 
     private val defaultOwner = "ril3y"
@@ -71,8 +77,23 @@ class UpdateManager(
         private val LABEL_TO_PACKAGE = mapOf(
             "launcher" to "io.freewheel.launcher",
             "freewheelbridge" to "io.freewheel.bridge",
+            // Release asset names (see .github/workflows/release.yml)
+            "velolauncher" to "io.freewheel.launcher",
+            "serialbridge" to "io.freewheel.bridge",
         )
+
+        const val SIGNATURE_MISMATCH_MESSAGE =
+            "This update must be installed with the FreeWheel installer on your PC " +
+                "(signing key changed). Run freewheel.exe v2.1.0+ and click Jailbreak/Update."
+
+        /** Derive label from an APK asset name: "launcher-1.0.0.apk" / "velolauncher.apk" -> "launcher" / "velolauncher". */
+        @androidx.annotation.VisibleForTesting
+        internal fun labelForAsset(name: String): String =
+            name.removeSuffix(".apk").substringBefore("-").ifBlank { name.removeSuffix(".apk") }
     }
+
+    /** Thrown when a downloaded APK is signed with a different key than the installed package. */
+    private class SignatureMismatchException(message: String) : Exception(message)
 
     /**
      * Checks if an update check is due (more than 24 hours since last check, or never checked).
@@ -91,6 +112,7 @@ class UpdateManager(
         if (_status.value == UpdateStatus.CHECKING || _status.value == UpdateStatus.DOWNLOADING) return
 
         _status.value = UpdateStatus.CHECKING
+        _errorMessage.value = null
         scope.launch {
             try {
                 val release = withContext(Dispatchers.IO) {
@@ -117,6 +139,7 @@ class UpdateManager(
 
                 // Keep first APK URL for legacy single-download path
                 apkDownloadUrl = updatable.firstOrNull()?.url
+                apkDownloadUpdate = updatable.firstOrNull()
 
                 if (updatable.isNotEmpty()) {
                     _availableUpdates.value = updatable
@@ -141,15 +164,16 @@ class UpdateManager(
         _status.value = UpdateStatus.DOWNLOADING
         _downloadProgress.value = 0f
 
+        val packageName = apkDownloadUpdate?.packageName
         scope.launch {
             try {
                 val apkFile = withContext(Dispatchers.IO) {
-                    downloadApk(url, "update.apk")
+                    downloadApk(url, "update.apk").also { verifySameSigner(it, packageName) }
                 }
                 downloadedApk = apkFile
                 _status.value = UpdateStatus.READY
-            } catch (_: Exception) {
-                _status.value = UpdateStatus.ERROR
+            } catch (e: Exception) {
+                failDownload(e)
             }
         }
     }
@@ -165,15 +189,53 @@ class UpdateManager(
             try {
                 val filename = "${appUpdate.label}-update.apk"
                 val apkFile = withContext(Dispatchers.IO) {
-                    downloadApk(appUpdate.url, filename)
+                    downloadApk(appUpdate.url, filename).also { verifySameSigner(it, appUpdate.packageName) }
                 }
                 downloadedApk = apkFile
                 _status.value = UpdateStatus.READY
-            } catch (_: Exception) {
-                _status.value = UpdateStatus.ERROR
+            } catch (e: Exception) {
+                failDownload(e)
             }
         }
     }
+
+    private fun failDownload(e: Exception) {
+        Log.e(TAG, "Update download failed", e)
+        _errorMessage.value = if (e is SignatureMismatchException) SIGNATURE_MISMATCH_MESSAGE else null
+        _status.value = UpdateStatus.ERROR
+    }
+
+    /**
+     * Android refuses to install an update signed with a different key than the installed
+     * app, and the system installer only says "App not installed". Detect that up front so
+     * the user gets an actionable message. Fails open: if either side's certificates can't
+     * be read, the install proceeds as before and the system installer has the final say.
+     */
+    private fun verifySameSigner(apkFile: File, packageName: String?) {
+        if (packageName == null) return
+        val pm = application.packageManager
+        @Suppress("DEPRECATION")
+        val installed = try {
+            signerSet(pm.getPackageInfo(packageName, PackageManager.GET_SIGNATURES))
+        } catch (_: PackageManager.NameNotFoundException) {
+            return
+        }
+        @Suppress("DEPRECATION")
+        val downloaded = signerSet(pm.getPackageArchiveInfo(apkFile.absolutePath, PackageManager.GET_SIGNATURES))
+        if (installed.isEmpty() || downloaded.isEmpty()) {
+            Log.w(TAG, "Could not read signatures for $packageName; skipping signer check")
+            return
+        }
+        if (installed != downloaded) {
+            Log.w(TAG, "Signer mismatch for $packageName: downloaded APK is signed with a different key")
+            apkFile.delete()
+            throw SignatureMismatchException("Signing key mismatch for $packageName")
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun signerSet(info: PackageInfo?): Set<String> =
+        info?.signatures?.map { it.toCharsString() }?.toSet() ?: emptySet()
 
     /** Install the most recently downloaded APK. */
     fun installUpdate() {
@@ -233,8 +295,7 @@ class UpdateManager(
                     val name = asset.optString("name", "")
                     if (name.endsWith(".apk")) {
                         val url = asset.optString("browser_download_url")
-                        // Derive label from filename: "launcher-1.0.0.apk" -> "launcher"
-                        val label = name.substringBefore("-").ifBlank { name.removeSuffix(".apk") }
+                        val label = labelForAsset(name)
                         val packageName = LABEL_TO_PACKAGE[label] ?: "io.freewheel.$label"
                         updates.add(AppUpdate(
                             name = name,

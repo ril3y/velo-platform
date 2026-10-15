@@ -40,20 +40,15 @@ jobs:
           key: gradle-${{ hashFiles('**/*.gradle.kts', '**/gradle-wrapper.properties') }}
           restore-keys: gradle-
 
-      - name: Create debug keystore
-        run: |
-          mkdir -p ~/.android
-          keytool -genkeypair -v \
-            -keystore ~/.android/debug.keystore \
-            -storepass android -keypass android \
-            -alias androiddebugkey \
-            -keyalg RSA -keysize 2048 -validity 10000 \
-            -dname "CN=Android Debug,O=Android,C=US"
-
+      # The launcher is built unsigned and signed below with the platform key, so every
+      # release carries the same certificate (in-app updates need a stable signer).
       - name: Build all Android modules (release)
-        run: ./gradlew assembleRelease --no-daemon
+        run: ./gradlew assembleRelease -PunsignedRelease --no-daemon
 
-      - name: Platform-sign FreewheelBridge
+      - name: Unit tests
+        run: ./gradlew testDebugUnitTest --no-daemon
+
+      - name: Platform-sign VeloLauncher and FreewheelBridge
         env:
           PLATFORM_PK8_B64: ${{ secrets.PLATFORM_PK8_B64 }}
           PLATFORM_CERT_B64: ${{ secrets.PLATFORM_CERT_B64 }}
@@ -62,27 +57,11 @@ jobs:
             echo "::error::Platform signing keys required for release builds"
             exit 1
           fi
-
-          echo "$PLATFORM_PK8_B64" | base64 -d > /tmp/platform.pk8
-          echo "$PLATFORM_CERT_B64" | base64 -d > /tmp/device_platform.x509.pem
-
-          BUILD_TOOLS="${ANDROID_HOME}/build-tools/34.0.0"
-
-          APK_IN="freewheelbridge/build/outputs/apk/release/freewheelbridge-release-unsigned.apk"
-          APK_ALIGNED="freewheelbridge/build/outputs/apk/freewheelbridge-aligned.apk"
-          APK_OUT="freewheelbridge/build/outputs/apk/freewheelbridge.apk"
-
-          "${BUILD_TOOLS}/zipalign" -f 4 "$APK_IN" "$APK_ALIGNED"
-          "${BUILD_TOOLS}/apksigner" sign \
-            --key /tmp/platform.pk8 \
-            --cert /tmp/device_platform.x509.pem \
-            --out "$APK_OUT" \
-            "$APK_ALIGNED"
-          rm -f "$APK_ALIGNED"
-
-          "${BUILD_TOOLS}/apksigner" verify --print-certs "$APK_OUT"
-
-          rm -f /tmp/platform.pk8 /tmp/device_platform.x509.pem
+          scripts/ci-platform-sign.sh \
+            launcher/build/outputs/apk/release/launcher-release-unsigned.apk \
+            launcher/build/outputs/apk/velolauncher.apk \
+            freewheelbridge/build/outputs/apk/release/freewheelbridge-release-unsigned.apk \
+            freewheelbridge/build/outputs/apk/freewheelbridge.apk
 
       - name: Build standalone JARs
         run: ./gradlew :ucblib:buildClassesJar :velofit:buildClassesJar --no-daemon
@@ -90,7 +69,7 @@ jobs:
       - name: Collect release artifacts
         run: |
           mkdir -p release
-          cp launcher/build/outputs/apk/release/launcher-release.apk release/velolauncher.apk
+          cp launcher/build/outputs/apk/velolauncher.apk release/velolauncher.apk
           cp freewheelbridge/build/outputs/apk/freewheelbridge.apk release/serialbridge.apk
           cp ucblib/build/libs/ucblib.jar release/
           cp velofit/build/libs/velofit.jar release/
@@ -107,6 +86,22 @@ jobs:
     needs: [build]
 
     steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: docs/release-notes
+
+      # Hand-written notes in docs/release-notes/<tag>.md (if present) go above the
+      # auto-generated changelog.
+      - name: Find release notes
+        id: notes
+        run: |
+          NOTES="docs/release-notes/${GITHUB_REF_NAME}.md"
+          if [ -f "$NOTES" ]; then
+            echo "path=$NOTES" >> "$GITHUB_OUTPUT"
+          else
+            echo "No $NOTES — using generated release notes only"
+          fi
+
       - name: Download release artifacts
         uses: actions/download-artifact@v4
         with:
@@ -117,6 +112,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
+          body_path: ${{ steps.notes.outputs.path }}
           files: |
             release/velolauncher.apk
             release/serialbridge.apk

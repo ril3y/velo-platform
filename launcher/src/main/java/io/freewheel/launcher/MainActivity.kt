@@ -440,6 +440,7 @@ fun LauncherApp(vm: LauncherViewModel) {
                 onInstallUpdate = { vm.installUpdate() },
                 availableUpdates = availableUpdates,
                 onDownloadAppUpdate = { vm.downloadUpdate(it) },
+                updateErrorMessage = vm.updateErrorMessage.collectAsState().value,
             )
         }
 

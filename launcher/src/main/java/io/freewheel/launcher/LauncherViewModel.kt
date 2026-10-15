@@ -168,6 +168,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     val updateChangelog get() = updateManager.changelog
     val updateDownloadProgress get() = updateManager.downloadProgress
     val availableUpdates get() = updateManager.availableUpdates
+    val updateErrorMessage get() = updateManager.errorMessage
     val updateAvailableCount: StateFlow<Int> = updateManager.availableUpdates
         .map { it.size }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)

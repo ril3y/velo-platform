@@ -75,6 +75,7 @@ public class MfgTestCommandTest {
         assertNotNull(MfgTestCommand.phaseInstruction(MfgTestCommand.CAL_PHASE_CENTER));
         assertTrue(MfgTestCommand.phaseInstruction(MfgTestCommand.CAL_PHASE_ZERO).contains("minimum"));
         assertTrue(MfgTestCommand.phaseInstruction(MfgTestCommand.CAL_PHASE_MAX).contains("maximum"));
-        assertTrue(MfgTestCommand.phaseInstruction(MfgTestCommand.CAL_PHASE_CENTER).contains("center"));
+        // Velocore knob has no center detent; instruction says "HALFWAY" (see 421dde6)
+        assertTrue(MfgTestCommand.phaseInstruction(MfgTestCommand.CAL_PHASE_CENTER).toLowerCase().contains("halfway"));
     }
 }

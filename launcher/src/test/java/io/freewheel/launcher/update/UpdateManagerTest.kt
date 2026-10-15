@@ -1,5 +1,6 @@
 package io.freewheel.launcher.update
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -68,5 +69,17 @@ class UpdateManagerTest {
     @Test
     fun isNewer_emptyStrings_returnsFalse() {
         assertFalse(isNewer("", ""))
+    }
+
+    @Test
+    fun labelForAsset_releaseAssetNames() {
+        // Release assets are named without a version suffix (see release.yml)
+        assertEquals("velolauncher", UpdateManager.labelForAsset("velolauncher.apk"))
+        assertEquals("serialbridge", UpdateManager.labelForAsset("serialbridge.apk"))
+    }
+
+    @Test
+    fun labelForAsset_versionedNames() {
+        assertEquals("launcher", UpdateManager.labelForAsset("launcher-1.0.0.apk"))
     }
 }
