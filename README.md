@@ -4,6 +4,14 @@ Monorepo for the Freewheel platform — custom Android software for the Bowflex 
 
 Replaces the stock Nautilus/JRNY software with an open framework: a serial bridge service, a fitness platform launcher, and libraries that let any Android app read bike sensors, control workouts, and integrate with the launcher's ride tracking.
 
+## Disclaimer
+
+> **USE AT YOUR OWN RISK.** VeloLauncher / FreeWheel is an unofficial community project, not affiliated with or endorsed by Bowflex, Nautilus, or JRNY.
+>
+> **The maintainer no longer owns a Velocore bike.** Releases from **v1.5.0** (launcher) / **v2.1.0** (installer) onward have **NOT been tested on real hardware.** They are built and unit-tested in CI only.
+>
+> Modifying your bike may void your warranty and could leave it in a state that requires a factory reset. This software is provided **AS IS, without warranty of any kind**.
+
 ## Modules
 
 | Module | Type | Package | Description |
@@ -350,9 +358,9 @@ client.startCalibration(0);
 client.addListener(new BikeServiceClient.ListenerAdapter() {
     @Override
     public void onCalibrationProgress(int step, String instruction) {
-        // step 0: "Turn resistance knob to minimum (zero). Press Confirm."
-        // step 1: "Turn resistance knob to maximum. Press Confirm."
-        // step 2: "Turn resistance knob to center detent. Press Confirm."
+        // step 0: "Turn resistance knob fully LEFT to minimum. Press Confirm."
+        // step 1: "Turn resistance knob fully RIGHT to maximum. Press Confirm."
+        // step 2: "Turn resistance knob to the HALFWAY point between min and max. Press Confirm."
         showInstruction(instruction);
     }
 
@@ -439,11 +447,13 @@ bash build-libs.sh
 # Sign freewheelbridge with platform key
 cd freewheelbridge && bash sign.sh
 
-# Build FreeWheel jailbreak tool (Windows)
-cd freewheel-jailbreak && go build -ldflags "-H windowsgui" -o freewheel.exe ./cmd/freewheel
-# Or full build (rebuilds APKs + embeds them):
-cd freewheel-jailbreak/build && build.bat
+# Run unit tests
+./gradlew testDebugUnitTest
 ```
+
+Local release builds of the launcher are signed with your `~/.android/debug.keystore`. CI builds pass `-PunsignedRelease` and sign with the platform key instead (see [Platform Signing](#platform-signing)).
+
+The Windows installer lives in its own repo: [ril3y/freewheel](https://github.com/ril3y/freewheel).
 
 ## Installing
 
@@ -462,16 +472,11 @@ adb -s 192.168.1.156:5555 install -r freewheelbridge/build/outputs/apk/freewheel
 
 ## Versioning
 
-Each app module has a `version.properties` file:
-```
-VERSION_MAJOR=1
-VERSION_MINOR=0
-VERSION_PATCH=0
-VERSION_BUILD=1
-```
+Versions come from git (see root `build.gradle.kts`):
 
-- `versionName` = `MAJOR.MINOR.PATCH` (bump manually for releases)
-- `versionCode` = `VERSION_BUILD` (auto-increments after every successful build)
+- `versionName` = latest `vX.Y.Z` tag from `git describe` (e.g. `v1.5.0` → `1.5.0`)
+- `versionCode` = commit count (always increasing)
+- Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds, platform-signs, and publishes the release. Hand-written notes in `docs/release-notes/<tag>.md` are placed above the generated changelog.
 
 ## Target Device
 
@@ -484,6 +489,23 @@ VERSION_BUILD=1
 ## Platform Signing
 
 FreewheelBridge requires `android.uid.system` to access `/dev/ttyS4`. See [freewheelbridge/README.md](freewheelbridge/README.md) for signing setup.
+
+The Velocore firmware uses a stock Rockchip/AOSP test platform key. Since v1.5.0, CI signs **both** SerialBridge and VeloLauncher release APKs with it, so every release has the same certificate and in-app updates keep working. (Earlier launcher releases were signed with a throwaway key generated per build, so updating from v1.4.0 or older requires a one-time reinstall with the [FreeWheel installer](https://github.com/ril3y/freewheel) v2.1.0+.)
+
+The public certificate is committed at [`keys/platform.x509.pem`](keys/platform.x509.pem):
+
+```
+SHA-256: 2d370c21f5dfd553d2a796314b70925fb38adeef90864c920bbbbb12887d3522
+```
+
+Verify a downloaded APK:
+
+```bash
+apksigner verify --print-certs velolauncher.apk   # "Signer #1 certificate SHA-256 digest" must match
+openssl x509 -in keys/platform.x509.pem -noout -fingerprint -sha256
+```
+
+CI (`scripts/ci-platform-sign.sh`) reads the private key from the `PLATFORM_PK8_B64` / `PLATFORM_CERT_B64` repository secrets and fails if the signed APKs' certificate differs from `keys/platform.x509.pem`. No private key is stored in this repo.
 
 ## Key Constants
 
