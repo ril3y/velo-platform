@@ -21,6 +21,7 @@ import io.freewheel.launcher.data.HomeTile
 import io.freewheel.launcher.data.RideSummary
 import io.freewheel.launcher.data.Workout
 import io.freewheel.launcher.overlay.HomeButtonOverlay
+import io.freewheel.launcher.overlay.OverlayPermission
 import io.freewheel.launcher.ui.*
 import io.freewheel.launcher.update.UpdateStatus
 import io.freewheel.launcher.ui.theme.VeloLauncherTheme
@@ -95,6 +96,14 @@ class MainActivity : ComponentActivity() {
             )
         } catch (_: Exception) {}
         viewModelRef?.loadApps()
+        // Automatically check if a ride was finished in the overlay while we were in a media app
+        viewModelRef?.checkPendingOverlaySummary()
+        // Re-poke the swipe-home zone: if overlay permission was granted since the
+        // service started, its onStartCommand adds the zone now (no-op otherwise).
+        // Plain startService — we're in the foreground, and it may already be running.
+        try {
+            HomeButtonOverlay.show(this)
+        } catch (_: Exception) {}
     }
 
     @Suppress("DEPRECATION")
@@ -165,6 +174,8 @@ fun LauncherApp(vm: LauncherViewModel) {
     var activeWorkout by remember { mutableStateOf<Workout?>(null) }
     var postCountdownScreen by remember { mutableStateOf(Screen.HOME) }
     var countdownForMediaOverlay by remember { mutableStateOf(false) }
+    var showOverlayPermissionDialog by remember { mutableStateOf(false) }
+    var overlaySettingsUnavailable by remember { mutableStateOf(false) }
 
     // Observe ride navigation events
     val rideNavEvent by vm.rideNavigationEvent.collectAsState()
@@ -447,7 +458,14 @@ fun LauncherApp(vm: LauncherViewModel) {
                 selectedMedia = selectedMedia,
                 onMediaSelect = { vm.selectMedia(it) },
                 onStartWithMedia = {
-                    vm.startWorkoutWithMedia()
+                    // The live-stats overlay needs "Display over other apps". Explain
+                    // and offer settings when it's missing, but never block the ride.
+                    if (OverlayPermission.canDrawOverlays(context)) {
+                        vm.startWorkoutWithMedia()
+                    } else {
+                        overlaySettingsUnavailable = false
+                        showOverlayPermissionDialog = true
+                    }
                     // No screen change — media app launches
                 },
                 onStartStatsOnly = {
@@ -469,7 +487,7 @@ fun LauncherApp(vm: LauncherViewModel) {
                     if (countdownForMediaOverlay) {
                         countdownForMediaOverlay = false
                         vm.launchMediaOverlay()
-                        // Don't change screen — media app takes over
+                        currentScreen = Screen.HOME  //Explicitly transition the screen state so it does not get stuck on countdown screen
                     } else {
                         // Start the ride NOW (after countdown, not before)
                         vm.beginRide()
@@ -554,11 +572,9 @@ fun LauncherApp(vm: LauncherViewModel) {
                         }
                     },
                     onEndWorkout = {
+                        // Overlay service is stopped by forceStopRide once the ride
+                        // actually ends (not if the user picks "Keep Riding").
                         vm.stopCurrentRide(selectedWorkout?.id, selectedWorkout?.name)
-                        // Stop overlay service
-                        context.stopService(
-                            android.content.Intent(context, io.freewheel.launcher.overlay.RideOverlayService::class.java)
-                        )
                     },
                 )
             } else HomeScreen(
@@ -613,6 +629,46 @@ fun LauncherApp(vm: LauncherViewModel) {
                 currentTime = currentTime,
             )
         }
+    }
+
+    if (showOverlayPermissionDialog) {
+        val adbCommand = "adb shell appops set ${context.packageName} SYSTEM_ALERT_WINDOW allow"
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showOverlayPermissionDialog = false },
+            title = { Text("Ride overlay not allowed", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    if (overlaySettingsUnavailable)
+                        "The permission screen isn't available on this device. Grant it from a computer with:\n\n" +
+                            "$adbCommand\n\nYou can still ride now without the overlay."
+                    else
+                        "To show live stats and the END button on top of the media app, VeloLauncher needs " +
+                            "the \"Display over other apps\" permission.\n\nWithout it your ride is still " +
+                            "tracked — return to VeloLauncher to see stats and end the ride."
+                )
+            },
+            confirmButton = {
+                if (!overlaySettingsUnavailable) {
+                    androidx.compose.material3.TextButton(onClick = {
+                        if (OverlayPermission.openSettings(context)) {
+                            showOverlayPermissionDialog = false
+                        } else {
+                            overlaySettingsUnavailable = true
+                        }
+                    }) {
+                        Text("Open settings", color = io.freewheel.launcher.ui.theme.NeonAccent)
+                    }
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    showOverlayPermissionDialog = false
+                    vm.startWorkoutWithMedia()
+                }) {
+                    Text("Continue without overlay")
+                }
+            },
+        )
     }
 
     // Screen saver overlay (on top of everything)

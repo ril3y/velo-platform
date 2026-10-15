@@ -92,7 +92,17 @@ class RideSessionManager(
     private var workoutWatcherJob: Job? = null
     private var lastSampleTime = 0L
 
-    fun startRide() {
+    /**
+     * @param endedElsewhere consulted when the bridge ends the workout underneath
+     *   us; return true if another session (the media-ride overlay) already logs
+     *   and summarizes this ride, so it isn't saved twice. Default: never.
+     * @param onExternalStop called after such a bridge-initiated stop with the
+     *   summary, or null if there is none or [endedElsewhere] claimed the ride.
+     */
+    fun startRide(
+        endedElsewhere: () -> Boolean = { false },
+        onExternalStop: (RideSummary?) -> Unit = {},
+    ) {
         if (_rideActive.value) return
 
         // Start workout on the bridge
@@ -152,7 +162,9 @@ class RideSessionManager(
         workoutWatcherJob = scope.launch {
             bridge.workoutActive.collect { active ->
                 if (!active && _rideActive.value) {
-                    stopRide()
+                    val handledElsewhere = endedElsewhere()
+                    val summary = stopRide(persist = !handledElsewhere)
+                    onExternalStop(if (handledElsewhere) null else summary)
                 }
             }
         }
@@ -169,7 +181,7 @@ class RideSessionManager(
         }
     }
 
-    fun stopRide(workoutId: String? = null, workoutName: String? = null): RideSummary? {
+    fun stopRide(workoutId: String? = null, workoutName: String? = null, persist: Boolean = true): RideSummary? {
         if (!_rideActive.value) return null
         _rideActive.value = false
         rideTimerJob?.cancel()
@@ -192,7 +204,7 @@ class RideSessionManager(
         val avgSpeed = if (elapsed > 0) _rideDistanceMiles.value / (elapsed / 3600f) else 0f
         val avgHr = if (heartRateSamples > 0) (heartRateSum / heartRateSamples).toInt() else 0
 
-        scope.launch {
+        if (persist) scope.launch {
             rideRepository.insert(
                 RideRecord(
                     startTime = rideStartTime,
