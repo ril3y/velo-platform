@@ -25,7 +25,9 @@ android {
 
     signingConfigs {
         create("release") {
-            // Use debug key for now — VeloLauncher doesn't need platform signing
+            // Local builds sign with the developer's debug key. CI passes -PunsignedRelease
+            // and signs the output with the platform key instead (see .github/workflows),
+            // so every published release carries the same certificate.
             storeFile = file("${System.getProperty("user.home")}/.android/debug.keystore")
             storePassword = "android"
             keyAlias = "androiddebugkey"
@@ -41,7 +43,8 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("release")
+            signingConfig = if (project.hasProperty("unsignedRelease")) null
+                else signingConfigs.getByName("release")
         }
         debug {
             isMinifyEnabled = false
