@@ -26,7 +26,10 @@ object MediaRideHandoff {
     private const val PREFS = "ride_overlay"
     private const val KEY_TIMESTAMP = "summary_timestamp"
     private const val KEY_TOKEN = "summary_ride_token"
-    private const val KEY_LAST_SHOWN = "summary_last_shown"
+    // Ride token of the last summary shown. Not a wall-clock timestamp, so a clock
+    // that moved backwards can't hide new summaries.
+    private const val KEY_LAST_SHOWN_TOKEN = "summary_last_shown_token"
+    private const val KEY_LEGACY_LAST_SHOWN = "summary_last_shown"
     private val SUMMARY_KEYS = listOf(
         "summary_duration", "summary_calories", "summary_avg_power", "summary_max_power",
         "summary_avg_rpm", "summary_avg_resistance", "summary_avg_hr", "summary_avg_speed",
@@ -108,7 +111,7 @@ object MediaRideHandoff {
                 summaryTimestamp = timestamp,
                 summaryToken = prefs.getLong(KEY_TOKEN, 0L),
                 now = now,
-                lastShownTimestamp = prefs.getLong(KEY_LAST_SHOWN, 0L),
+                lastShownToken = prefs.getLong(KEY_LAST_SHOWN_TOKEN, 0L),
                 launcherSummarizedToken = endedByLauncherToken,
             )
             val summary = if (deliver) RideSummary(
@@ -125,7 +128,8 @@ object MediaRideHandoff {
             ) else null
             val edit = prefs.edit()
             SUMMARY_KEYS.forEach { edit.remove(it) }
-            if (deliver) edit.putLong(KEY_LAST_SHOWN, timestamp)
+            edit.remove(KEY_LEGACY_LAST_SHOWN)
+            if (deliver) edit.putLong(KEY_LAST_SHOWN_TOKEN, prefs.getLong(KEY_TOKEN, 0L))
             edit.apply()
             summary
         } catch (_: Exception) {
@@ -135,19 +139,19 @@ object MediaRideHandoff {
 
     /**
      * Pure decision for [consumeSummary]: show the overlay summary only if it is
-     * recent, newer than the last one shown, and the launcher has not already
-     * shown its own summary for the same ride. A clock that moved backwards by
+     * recent, not for the same ride as the last one shown, and the launcher has
+     * not already shown its own summary for the same ride. A clock that moved backwards by
      * less than the max age still counts as recent.
      */
     fun shouldDeliverSummary(
         summaryTimestamp: Long,
         summaryToken: Long,
         now: Long,
-        lastShownTimestamp: Long,
+        lastShownToken: Long,
         launcherSummarizedToken: Long,
     ): Boolean {
         if (summaryTimestamp <= 0L) return false
-        if (summaryTimestamp <= lastShownTimestamp) return false
+        if (summaryToken != 0L && summaryToken == lastShownToken) return false
         val age = now - summaryTimestamp
         if (age > SUMMARY_MAX_AGE_MS || age < -SUMMARY_MAX_AGE_MS) return false
         if (summaryToken != 0L && summaryToken == launcherSummarizedToken) return false

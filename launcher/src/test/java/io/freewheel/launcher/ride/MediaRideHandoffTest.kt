@@ -42,11 +42,19 @@ class MediaRideHandoffTest {
 
     @Test
     fun alreadyShownSummary_isDropped() {
-        val ts = now - 5_000
-        assertFalse(deliver(timestamp = ts, lastShown = ts))
-        assertFalse(deliver(timestamp = ts, lastShown = ts + 1))
-        assertTrue(deliver(timestamp = ts, lastShown = ts - 1))
+        assertFalse(deliver(token = 7L, lastShown = 7L))
+        assertTrue(deliver(token = 8L, lastShown = 7L))
     }
+
+    @Test
+    fun summaryOlderThanLastShown_clockMovedBack_isDelivered() =
+        // lastShown is a ride token, so a new ride whose token (wall clock) is
+        // below the previous one is still shown.
+        assertTrue(deliver(token = now - 3_600_000, lastShown = now))
+
+    @Test
+    fun legacySummaryWithoutToken_isNotMatchedToLastShown() =
+        assertTrue(deliver(token = 0L, lastShown = 0L))
 
     @Test
     fun summaryForRideLauncherAlreadySummarized_isDropped() {
