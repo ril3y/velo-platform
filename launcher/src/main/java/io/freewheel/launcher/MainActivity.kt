@@ -43,20 +43,10 @@ class MainActivity : ComponentActivity() {
             android.provider.Settings.System.putInt(contentResolver, "screen_off_timeout", 2147483647) // Screen never times out
         } catch (_: Exception) {}
 
-        // Safety net: ensure GMS and GSF are enabled (required for WiFi/BT stability).
-        // Early jailbreak versions disabled these to save RAM, which broke WiFi HAL
-        // and caused Bluetooth crash loops. Re-enable on every launch to self-heal.
-        try {
-            Runtime.getRuntime().exec(arrayOf("pm", "enable", "com.google.android.gms"))
-            Runtime.getRuntime().exec(arrayOf("pm", "enable", "com.google.android.gsf"))
-        } catch (_: Exception) {}
-
-        // Suppress system crash dialogs ("X keeps stopping") — the Realtek BT chip
-        // on Rockchip boards has HCI timeout issues that cause com.android.bluetooth
-        // to crash-loop, but BT audio (A2DP) still works fine through the HAL.
-        try {
-            android.provider.Settings.Global.putInt(contentResolver, "hide_error_dialogs", 1)
-        } catch (_: Exception) {}
+        // Self-healing (re-enabling GMS/GSF, restoring our SYSTEM_ALERT_WINDOW appop) lives in
+        // FreewheelBridge (io.freewheel.bridge SelfHeal), which runs as the system uid. The
+        // launcher is a normal app: "pm enable" and Settings.Global writes such as
+        // hide_error_dialogs silently fail from here, so they were removed.
 
         // Always ensure the bottom-edge swipe gesture zone is running.
         // This survives app reinstalls and process kills — the user should
@@ -317,7 +307,10 @@ fun LauncherApp(vm: LauncherViewModel) {
             val availableUpdates by vm.availableUpdates.collectAsState()
 
             // Diagnostics state
-            val bridgeConnected by vm.bridgeConnected.collectAsState()
+            val bridgeLinkState by vm.bridgeLinkState.collectAsState()
+            val bridgeDiag by vm.bridgeDiagnostics.collectAsState()
+            val sensorTestSecondsLeft by vm.sensorTestSecondsLeft.collectAsState()
+            val sensorTestMessage by vm.sensorTestMessage.collectAsState()
             val bridgeFwState by vm.bridgeFirmwareState.collectAsState()
             val bridgeFwStateName by vm.bridgeFirmwareStateName.collectAsState()
             val bridgeSensor by vm.bridgeSensorData.collectAsState()
@@ -331,8 +324,9 @@ fun LauncherApp(vm: LauncherViewModel) {
             val rawFrameLog = remember { mutableStateListOf<String>() }
             val latestRawFrame by vm.bridgeRawFrames.collectAsState()
             LaunchedEffect(latestRawFrame) {
-                latestRawFrame?.let { (data, isInbound) ->
-                    val dir = if (isInbound) "RX" else "TX"
+                latestRawFrame?.let { (data, isOutgoing) ->
+                    // The bridge reports isOutgoing=true for frames it sends to the UCB
+                    val dir = if (isOutgoing) "TX" else "RX"
                     val hex = data.joinToString(" ") { "%02X".format(it) }
                     rawFrameLog.add(0, "$dir $hex")
                     if (rawFrameLog.size > 200) rawFrameLog.removeRange(200, rawFrameLog.size)
@@ -376,7 +370,17 @@ fun LauncherApp(vm: LauncherViewModel) {
                 onAutoRestartBridgeChange = { vm.setAutoRestartBridge(it) },
                 // Diagnostics
                 diagnosticsState = DiagnosticsState(
-                    connected = bridgeConnected,
+                    linkState = bridgeLinkState,
+                    diagnosticsAvailable = bridgeDiag.available,
+                    portDev = bridgeDiag.portDev,
+                    baud = bridgeDiag.baud,
+                    bytesRead = bridgeDiag.bytesRead,
+                    framesOk = bridgeDiag.framesOk,
+                    crcErrors = bridgeDiag.crcErrors,
+                    lastFrameAgeMs = bridgeDiag.lastFrameAgeMs,
+                    holders = bridgeDiag.holders,
+                    sensorTestSecondsLeft = sensorTestSecondsLeft,
+                    sensorTestMessage = sensorTestMessage,
                     firmwareState = bridgeFwState,
                     firmwareStateName = if (bridgeFwStateName.isNotBlank()) bridgeFwStateName else "Unknown",
                     resistance = bridgeSensor.resistanceLevel,
@@ -391,6 +395,8 @@ fun LauncherApp(vm: LauncherViewModel) {
                     rawMonitorEnabled = bridgeRawMonitor,
                 ),
                 onToggleRawMonitor = { vm.setRawFrameMonitoring(it) },
+                onStartSensorTest = { vm.startSensorTest() },
+                onStopSensorTest = { vm.stopSensorTest() },
                 // OTA firmware flash
                 otaFlashState = OtaFlashState(
                     currentFirmwareVersion = when {
@@ -506,7 +512,8 @@ fun LauncherApp(vm: LauncherViewModel) {
             val speed by vm.rideSpeedMph.collectAsState()
             val distance by vm.rideDistanceMiles.collectAsState()
             val hr by vm.rideHeartRate.collectAsState()
-            val connected by vm.bridgeConnected.collectAsState()
+            val linkState by vm.bridgeLinkState.collectAsState()
+            val connected = linkState == io.freewheel.ucb.BridgeDiagnostics.LinkState.BIKE_CONNECTED
             val powerHist by vm.ridePowerHistory.collectAsState()
             val paused by vm.ridePaused.collectAsState()
 

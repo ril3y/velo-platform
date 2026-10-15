@@ -28,6 +28,8 @@ import io.freewheel.launcher.system.ScreenSaverManager
 import io.freewheel.launcher.system.SystemMonitor
 import io.freewheel.launcher.update.AppUpdate
 import io.freewheel.launcher.update.UpdateManager
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -59,7 +61,14 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     private val taskRepository = TaskRepository(application)
     private val serviceMonitor = ServiceMonitor(application)
     private val systemMonitor = SystemMonitor(application, viewModelScope)
-    private val rideSessionManager = RideSessionManager(bridgeConnectionManager, viewModelScope, rideRepository)
+    private val rideSessionManager = RideSessionManager(bridgeConnectionManager, viewModelScope, rideRepository) { reason ->
+        // Non-blocking: the ride still starts, but the user knows why the numbers stay at zero
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            android.widget.Toast.makeText(
+                application, "Could not start sensors: $reason", android.widget.Toast.LENGTH_LONG,
+            ).show()
+        }
+    }
     private val screenSaverManager = ScreenSaverManager(prefs, viewModelScope, application.contentResolver) {
         rideSessionManager.rideActive.value
     }
@@ -115,6 +124,8 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     // --- Exposed state: Bridge (for diagnostics, calibration, OTA) ---
     val bridgeConnected get() = bridgeConnectionManager.connected
+    val bridgeLinkState get() = bridgeConnectionManager.linkState
+    val bridgeDiagnostics get() = bridgeConnectionManager.diagnostics
     val bridgeSensorData get() = bridgeConnectionManager.sensorData
     val bridgeFirmwareState get() = bridgeConnectionManager.firmwareState
     val bridgeFirmwareStateName get() = bridgeConnectionManager.firmwareStateName
@@ -257,6 +268,70 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     fun setRawFrameMonitoring(enabled: Boolean) = bridgeConnectionManager.setRawFrameMonitoring(enabled)
     fun sendRawCommand(frame: ByteArray) = bridgeConnectionManager.sendRawCommand(frame)
     fun getBridgeService() = bridgeConnectionManager.getService()
+
+    // --- Diagnostics: 30s sensor test (uses the normal start/stop workout API) ---
+
+    private val _sensorTestSecondsLeft = MutableStateFlow(0)
+    val sensorTestSecondsLeft: StateFlow<Int> = _sensorTestSecondsLeft.asStateFlow()
+
+    private val _sensorTestMessage = MutableStateFlow<String?>(null)
+    val sensorTestMessage: StateFlow<String?> = _sensorTestMessage.asStateFlow()
+
+    private var sensorTestJob: Job? = null
+    private var sensorTestOwnsWorkout = false
+
+    fun startSensorTest() {
+        if (sensorTestJob?.isActive == true) return
+        if (rideSessionManager.rideActive.value || bridgeConnectionManager.workoutActive.value) {
+            _sensorTestMessage.value = "A workout is already running \u2013 sensors should already be live"
+            return
+        }
+        val framesBefore = bridgeConnectionManager.diagnostics.value.framesOk
+        if (!bridgeConnectionManager.startWorkout()) {
+            _sensorTestMessage.value =
+                "Could not start sensors: ${bridgeConnectionManager.lastStartWorkoutError ?: "unknown error"}"
+            return
+        }
+        sensorTestOwnsWorkout = true
+        _sensorTestMessage.value = "Pedal and change resistance \u2013 values below should move"
+        sensorTestJob = viewModelScope.launch {
+            var sawSensorData = false
+            val sensorWatch = launch {
+                bridgeConnectionManager.sensorData.collect { if (it.rpm > 0 || it.power > 0f) sawSensorData = true }
+            }
+            try {
+                for (s in 30 downTo 1) {
+                    _sensorTestSecondsLeft.value = s
+                    delay(1000)
+                }
+                bridgeConnectionManager.refreshDiagnostics()
+                val newFrames = bridgeConnectionManager.diagnostics.value.framesOk - framesBefore
+                _sensorTestMessage.value = when {
+                    sawSensorData -> "Test finished \u2013 sensor data received"
+                    newFrames > 0 -> "Test finished \u2013 $newFrames frames from bike but no motion seen (did you pedal?)"
+                    else -> "Test finished \u2013 NO data from bike. Check the link status above."
+                }
+            } finally {
+                sensorWatch.cancel()
+                finishSensorTest()
+            }
+        }
+    }
+
+    fun stopSensorTest() {
+        if (sensorTestJob?.isActive == true) _sensorTestMessage.value = "Test stopped"
+        sensorTestJob?.cancel()
+        finishSensorTest()
+    }
+
+    private fun finishSensorTest() {
+        _sensorTestSecondsLeft.value = 0
+        if (sensorTestOwnsWorkout) {
+            sensorTestOwnsWorkout = false
+            // Don't tear down a real ride that somehow started meanwhile
+            if (!rideSessionManager.rideActive.value) bridgeConnectionManager.stopWorkout()
+        }
+    }
 
     // --- Task manager operations ---
 
@@ -464,6 +539,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     override fun onCleared() {
         super.onCleared()
+        stopSensorTest()
         rideSessionManager.destroy()
         screenSaverManager.destroy()
         workoutAppRegistry.stop()

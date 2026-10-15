@@ -4,6 +4,7 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
@@ -406,6 +407,24 @@ public class BikeServiceClient {
             service.sendRawCommand(frame);
         } catch (RemoteException e) {
             Log.e(TAG, "Failed to send raw command", e);
+        }
+    }
+
+    /**
+     * Link diagnostics from the bridge (keys in {@link BridgeDiagnostics}).
+     * Returns null if not bound, on RemoteException, or if the installed bridge predates
+     * getDiagnostics() (an unknown transaction comes back as an empty reply / null Bundle).
+     */
+    public Bundle getDiagnostics() {
+        IBikeService s = service;
+        if (s == null) return null;
+        try {
+            return s.getDiagnostics();
+        } catch (RemoteException e) {
+            return null;
+        } catch (RuntimeException e) {
+            Log.w(TAG, "getDiagnostics failed (older FreewheelBridge?)", e);
+            return null;
         }
     }
 

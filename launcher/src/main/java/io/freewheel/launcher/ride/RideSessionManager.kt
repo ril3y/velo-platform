@@ -22,6 +22,8 @@ class RideSessionManager(
     private val bridge: BridgeConnectionManager,
     private val scope: CoroutineScope,
     private val rideRepository: RideRepository,
+    /** Called (non-blocking) when the bridge refuses/fails to start sensor streaming. */
+    private val onSensorStartFailed: (reason: String) -> Unit = {},
 ) {
 
     private val _rideActive = MutableStateFlow(false)
@@ -109,7 +111,9 @@ class RideSessionManager(
         val ok = bridge.startWorkout()
         if (!ok && !bridge.workoutActive.value) {
             // Bridge not connected or couldn't start — still allow tracking
-            // (the bridge may connect later)
+            // (the bridge may connect later), but tell the user instead of silently
+            // showing zeros.
+            onSensorStartFailed(bridge.lastStartWorkoutError ?: "unknown error")
         }
 
         _rideActive.value = true
