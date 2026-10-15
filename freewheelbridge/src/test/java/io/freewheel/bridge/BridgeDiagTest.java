@@ -151,6 +151,28 @@ public class BridgeDiagTest {
     }
 
     @Test
+    public void deferStreamingSettingIsOptIn() {
+        assertFalse(BridgeDiag.isSettingEnabled(null));
+        assertFalse(BridgeDiag.isSettingEnabled(""));
+        assertFalse(BridgeDiag.isSettingEnabled("null"));
+        assertFalse(BridgeDiag.isSettingEnabled("0"));
+        assertFalse(BridgeDiag.isSettingEnabled("yes"));
+        assertTrue(BridgeDiag.isSettingEnabled("1"));
+        assertTrue(BridgeDiag.isSettingEnabled(" 1 "));
+        assertTrue(BridgeDiag.isSettingEnabled("TRUE"));
+    }
+
+    @Test
+    public void killHoldersOnlyAfterSustainedOutageWithPortOpen() {
+        long min = 30000;
+        assertFalse("healthy", BridgeDiag.shouldKillHolders(true, true, 1000, 100000, min));
+        assertFalse("port closed", BridgeDiag.shouldKillHolders(false, false, 1000, 100000, min));
+        assertFalse("outage not tracked yet", BridgeDiag.shouldKillHolders(false, true, 0, 100000, min));
+        assertFalse("outage too short", BridgeDiag.shouldKillHolders(false, true, 80000, 100000, min));
+        assertTrue(BridgeDiag.shouldKillHolders(false, true, 70000, 100000, min));
+    }
+
+    @Test
     public void fireDeferredOnlyOnTransitionIntoStreamingStateWhilePending() {
         assertTrue(BridgeDiag.shouldFireDeferredStreaming(true, true, 10, 8));
         assertTrue(BridgeDiag.shouldFireDeferredStreaming(true, true, 12, 9));

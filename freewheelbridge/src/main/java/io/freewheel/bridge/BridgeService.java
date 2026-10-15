@@ -107,6 +107,7 @@ public class BridgeService extends Service {
     private volatile long lastValidFrameMs = 0;    // SystemClock.elapsedRealtime(), 0 = never
     private volatile String portHolders = "none";  // other processes holding the serial device
     private volatile long lastHolderScanMs = 0;
+    private long unhealthySinceMs = 0;             // diagnostics timer thread only; 0 = link healthy
     private final BridgeDiag.OnceLimiter unexpectedFrameLog = new BridgeDiag.OnceLimiter();
     private static final long LINK_FRESH_MS = 5000;
     private static final long HOLDER_SCAN_UNHEALTHY_MS = 30000;
@@ -404,14 +405,20 @@ public class BridgeService extends Service {
         long now = SystemClock.elapsedRealtime();
         long age = BridgeDiag.frameAgeMs(lastValidFrameMs, now);
         boolean healthy = age >= 0 && age <= LINK_FRESH_MS;
+        if (healthy || !portOpen) {
+            unhealthySinceMs = 0;
+        } else if (unhealthySinceMs == 0) {
+            unhealthySinceMs = now;
+        }
 
         // Scan for other processes holding the UART: first tick after start, then every
-        // 30s while no valid frames are arriving (every 5 min, report-only, while healthy).
+        // 30s while no valid frames are arriving (every 5 min while healthy). Holders are
+        // only killed after the port has been open with no valid frames for 30s.
         long interval = healthy ? HOLDER_SCAN_HEALTHY_MS : HOLDER_SCAN_UNHEALTHY_MS;
         if (lastHolderScanMs == 0 || now - lastHolderScanMs >= interval) {
-            boolean firstScan = lastHolderScanMs == 0;
             lastHolderScanMs = now;
-            scanPortHolders(firstScan || !healthy);
+            scanPortHolders(BridgeDiag.shouldKillHolders(healthy, portOpen, unhealthySinceMs, now,
+                HOLDER_SCAN_UNHEALTHY_MS));
         }
 
         int fw = currentFirmwareState;
@@ -485,7 +492,7 @@ public class BridgeService extends Service {
                 }
             } else {
                 Log.w(TAG, dev + " is also open in stock app pid " + h.pid + " (" + h.cmdline
-                    + ") — frames are arriving, not killing");
+                    + ") — link not down for long enough, not killing");
             }
         }
     }
@@ -649,18 +656,33 @@ public class BridgeService extends Service {
         Log.d(TAG, "Queued WORKOUT_BLE_DATA (POST, 51 bytes)");
 
         // In a known non-streaming state (e.g. SLEEP, MFG, SBC_DISCONNECTED) the UCB may ignore
-        // the enable above. Everything above is still sent exactly as before; we just remember
-        // to re-send the SAME enable once a heartbeat reports SELECTION/WORKOUT.
-        // Unknown state (-1) or already SELECTION/WORKOUT: no change from previous behaviour.
+        // the enable above. Everything above is still sent exactly as before. By default we only
+        // log it (TX sequence identical to v1.4.0); with Settings.Global freewheel_defer_streaming=1
+        // we also re-send the SAME enable once a heartbeat reports SELECTION/WORKOUT.
         int fw = currentFirmwareState;
         if (BridgeDiag.shouldDeferStreaming(fw)) {
-            workoutPending = true;
-            Log.w(TAG, "doStartWorkout: UCB is in " + firmwareStateName(fw) + " (" + fw
-                + ") — will re-send STREAMING_CONTROL enable when it reaches SELECTION/WORKOUT");
+            if (isDeferStreamingEnabled()) {
+                workoutPending = true;
+                Log.w(TAG, "doStartWorkout: UCB is in " + firmwareStateName(fw) + " (" + fw
+                    + ") — will re-send STREAMING_CONTROL enable when it reaches SELECTION/WORKOUT");
+            } else {
+                Log.w(TAG, "doStartWorkout: UCB is in " + firmwareStateName(fw) + " (" + fw
+                    + ") — streaming may not start (set " + BridgeDiag.SETTING_DEFER_STREAMING
+                    + "=1 to re-send the enable later)");
+            }
         }
 
         broadcastWorkoutState(true, "started");
         return true;
+    }
+
+    private boolean isDeferStreamingEnabled() {
+        try {
+            return BridgeDiag.isSettingEnabled(
+                Settings.Global.getString(getContentResolver(), BridgeDiag.SETTING_DEFER_STREAMING));
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     /** STREAMING_CONTROL enable — JRNY sends it as POST (msgType=0x02, Purpose.POST). */

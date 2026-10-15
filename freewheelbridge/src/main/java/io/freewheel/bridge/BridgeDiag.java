@@ -16,6 +16,15 @@ final class BridgeDiag {
 
     static final String SETTING_SERIAL_DEV = "freewheel_serial_dev";
     static final String SETTING_SERIAL_BAUD = "freewheel_serial_baud";
+    /** Opt-in (default off): re-send STREAMING_CONTROL enable once the UCB reaches SELECTION/WORKOUT. */
+    static final String SETTING_DEFER_STREAMING = "freewheel_defer_streaming";
+
+    /** True only for an explicit "1"/"true"; unset or anything else means off. */
+    static boolean isSettingEnabled(String raw) {
+        if (raw == null) return false;
+        String v = raw.trim();
+        return "1".equals(v) || "true".equalsIgnoreCase(v);
+    }
 
     static final String DEFAULT_SERIAL_DEV = "/dev/ttyS4";
     static final int DEFAULT_BAUD = 230400;
@@ -86,6 +95,16 @@ final class BridgeDiag {
     }
 
     /** Only stock Nautilus/JRNY processes are ever killed for holding the serial port. */
+    /**
+     * Killing a competing stock holder is allowed only while the port is open and no valid
+     * frame has arrived for at least {@code minUnhealthyMs} (never on a fresh start, never
+     * while frames are arriving).
+     */
+    static boolean shouldKillHolders(boolean healthy, boolean portOpen, long unhealthySinceMs,
+                                     long nowMs, long minUnhealthyMs) {
+        return !healthy && portOpen && unhealthySinceMs > 0 && nowMs - unhealthySinceMs >= minUnhealthyMs;
+    }
+
     static boolean isKillableHolder(String cmdline) {
         return cmdline != null && cmdline.startsWith("com.nautilus.");
     }
@@ -153,7 +172,8 @@ final class BridgeDiag {
 
     /**
      * Called at workout start. Only when the firmware state is KNOWN and is not one where
-     * streaming works do we remember to re-send the (same) STREAMING_CONTROL enable later.
+     * streaming works do we remember to re-send the (same) STREAMING_CONTROL enable later
+     * (and only if {@link #SETTING_DEFER_STREAMING} is enabled; otherwise it is just logged).
      * Unknown (-1) or SELECTION/WORKOUT: behave exactly as before (no pending).
      */
     static boolean shouldDeferStreaming(int fwState) {
